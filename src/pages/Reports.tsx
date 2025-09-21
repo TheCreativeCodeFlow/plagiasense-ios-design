@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useNavigate, useParams } from "react-router-dom";
+import CircularProgress from "@/components/circular-progress";
+import AnimatedBackground from "@/components/animated-background";
 import { 
   ArrowLeft,
   FileText,
@@ -136,46 +138,16 @@ Over 70 million people died during World War II, making it the deadliest conflic
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Score Overview */}
-            <Card className="p-8 glass-card">
+            <Card className="p-8 glass-card hover:glow-strong animate-fade-in">
               <div className="text-center space-y-6">
-                <div className="relative w-48 h-48 mx-auto">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 200 200">
-                    <circle
-                      cx="100"
-                      cy="100"
-                      r="85"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="8"
-                      className="text-muted"
-                      opacity="0.3"
-                    />
-                    <circle
-                      cx="100"
-                      cy="100"
-                      r="85"
-                      fill="none"
-                      strokeWidth="8"
-                      strokeLinecap="round"
-                      className={`${getScoreColor(animatedScore)} transition-all duration-1000`}
-                      stroke="url(#gradient)"
-                      strokeDasharray={`${(animatedScore / 100) * 534.07} 534.07`}
-                    />
-                    <defs>
-                      <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" className={`${getScoreGradient(animatedScore).split(' ')[0]}`} />
-                        <stop offset="100%" className={`${getScoreGradient(animatedScore).split(' ')[1]}`} />
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className={`text-5xl font-bold ${getScoreColor(animatedScore)}`}>
-                        {animatedScore}%
-                      </div>
-                      <div className="text-sm text-muted-foreground">Similarity</div>
-                    </div>
-                  </div>
+                <div className="mb-6">
+                  <CircularProgress 
+                    value={animatedScore} 
+                    size={200}
+                    strokeWidth={12}
+                    animated={true}
+                    color={animatedScore >= 70 ? 'destructive' : animatedScore >= 30 ? 'warning' : 'success'}
+                  />
                 </div>
                 
                 <div className="grid grid-cols-3 gap-4 text-center">

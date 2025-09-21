@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { useNavigate } from "react-router-dom";
+import AnimatedBackground from "@/components/animated-background";
 import { 
   Upload, 
   FileText, 
@@ -69,9 +70,10 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex relative">
+      <AnimatedBackground />
       {/* Sidebar */}
-      <div className="w-64 bg-sidebar border-r glass-card">
+      <div className="w-64 bg-sidebar border-r glass-card relative z-10">
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
             <div className="text-2xl font-bold text-primary">PlagiaSense</div>
