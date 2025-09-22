@@ -6,7 +6,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -20,6 +20,9 @@ from sentence_transformers import SentenceTransformer, util
 # Sentence splitting
 import nltk
 from nltk.tokenize import sent_tokenize
+
+# AI Detection
+import ai_detector
 
 # Initialize FastAPI app
 app = FastAPI(title="PlagiaSense API", description="BERT-based Plagiarism Detection API", version="1.0.0")
@@ -60,6 +63,26 @@ class HealthResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     detail: str
+
+class AIDetectionResult(BaseModel):
+    available: bool
+    method: Optional[str] = None
+    overall_score: float
+    sentence_scores: List[float]
+    high_risk_sentences: int
+    medium_risk_sentences: int
+    model_used: Optional[str] = None
+    optimized: Optional[bool] = None
+    device: Optional[str] = None
+    total_sentences_analyzed: int
+    processing_time: float
+    error: Optional[str] = None
+
+class AIAnalysisRequest(BaseModel):
+    method: str = "pretrained"  # pretrained, gptzero_api, custom_api, statistical
+    model_choice: Optional[str] = "roberta-openai"
+    api_key: Optional[str] = None
+    api_url: Optional[str] = None
 
 # Utility functions (adapted from Streamlit version)
 def load_model_sync(model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
@@ -390,6 +413,130 @@ async def configure_thresholds(
         "orange_threshold": ORANGE_THRESHOLD,
         "max_sentences": MAX_SENTENCES
     }
+
+# ============================================================================
+# AI DETECTION ENDPOINTS
+# ============================================================================
+
+@app.get("/api/ai-detection/methods")
+async def get_ai_detection_methods():
+    """Get available AI detection methods."""
+    try:
+        methods = ai_detector.get_available_methods()
+        return {"methods": methods}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get AI detection methods: {e}")
+
+@app.get("/api/ai-detection/models")
+async def get_ai_detection_models():
+    """Get available AI detection models."""
+    try:
+        models = ai_detector.get_model_choices()
+        performance_info = ai_detector.get_performance_info()
+        return {
+            "models": models,
+            "performance_info": performance_info
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get AI detection models: {e}")
+
+@app.post("/api/ai-detection/analyze", response_model=AIDetectionResult)
+async def analyze_ai_content(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    method: str = Form("pretrained"),
+    model_choice: Optional[str] = Form("roberta-openai"),
+    api_key: Optional[str] = Form(None),
+    api_url: Optional[str] = Form(None)
+):
+    """Analyze uploaded document for AI-generated content."""
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+    
+    # Create analysis config from form parameters
+    analysis_config = AIAnalysisRequest(
+        method=method,
+        model_choice=model_choice,
+        api_key=api_key,
+        api_url=api_url
+    )
+    
+    try:
+        import time
+        start_time = time.time()
+        
+        # Read the main document (first file)
+        main_file = files[0]
+        if not main_file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        
+        # Read PDF content
+        file_content = await main_file.read()
+        main_text = read_pdf_bytes(file_content)
+        
+        if not main_text or len(main_text.strip()) < 10:
+            raise HTTPException(status_code=400, detail="Could not extract meaningful text from the PDF")
+        
+        # Split into sentences
+        download_nltk_data()
+        main_sentences = split_sentences(main_text)
+        
+        if not main_sentences:
+            raise HTTPException(status_code=400, detail="Could not extract sentences from the document")
+        
+        # Prepare analysis parameters
+        analysis_params = {
+            "method": analysis_config.method,
+        }
+        
+        if analysis_config.method == "pretrained":
+            analysis_params["model_choice"] = analysis_config.model_choice or "roberta-openai"
+        elif analysis_config.method == "gptzero_api":
+            if not analysis_config.api_key:
+                raise HTTPException(status_code=400, detail="API key is required for GPTZero analysis")
+            analysis_params["api_key"] = analysis_config.api_key
+        elif analysis_config.method == "custom_api":
+            if not analysis_config.api_url:
+                raise HTTPException(status_code=400, detail="API URL is required for custom API analysis")
+            analysis_params["api_url"] = analysis_config.api_url
+            if analysis_config.api_key:
+                analysis_params["api_key"] = analysis_config.api_key
+        
+        # Run AI detection analysis
+        def run_ai_analysis():
+            return ai_detector.analyze_ai_content(main_text, main_sentences, **analysis_params)
+        
+        # Run analysis in thread pool for non-blocking execution
+        loop = asyncio.get_event_loop()
+        ai_results = await loop.run_in_executor(executor, run_ai_analysis)
+        
+        processing_time = time.time() - start_time
+        
+        if not ai_results.get("available", False):
+            error_msg = ai_results.get("error", "AI detection analysis failed")
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        # Format response
+        result = AIDetectionResult(
+            available=ai_results.get("available", False),
+            method=ai_results.get("method", analysis_config.method),
+            overall_score=ai_results.get("overall_score", 0.0),
+            sentence_scores=ai_results.get("sentence_scores", []),
+            high_risk_sentences=ai_results.get("high_risk_sentences", 0),
+            medium_risk_sentences=ai_results.get("medium_risk_sentences", 0),
+            model_used=ai_results.get("model_used"),
+            optimized=ai_results.get("optimized"),
+            device=ai_results.get("device"),
+            total_sentences_analyzed=ai_results.get("total_sentences_analyzed", len(main_sentences)),
+            processing_time=processing_time
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI detection analysis failed: {e}")
 
 @app.get("/api/status")
 async def get_status():

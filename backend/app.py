@@ -15,10 +15,15 @@ from sentence_transformers import SentenceTransformer, util
 import nltk
 from nltk.tokenize import sent_tokenize
 
+# AI Detection
+import ai_detector
+
 # --------- Config ---------
 st.set_page_config(page_title="BERT Plagiarism Checker", page_icon="📑", layout="wide")
 
-# Initialize session state for navigation
+# Initialize session state for naviga# --------- App UI ---------
+st.title("📑 Academic Integrity Checker - Plagiarism & AI Detection")
+st.caption("Upload PDFs: the **first** is the student document to check; the **rest** are reference documents.")
 if 'current_flagged_index' not in st.session_state:
     st.session_state.current_flagged_index = 0
 if 'flagged_sentences' not in st.session_state:
@@ -48,7 +53,7 @@ def get_available_models() -> Dict[str, str]:
     return {
         "all-MiniLM-L6-v2 (Fast & Balanced)": "sentence-transformers/all-MiniLM-L6-v2",
         "all-mpnet-base-v2 (High Quality)": "sentence-transformers/all-mpnet-base-v2",
-        "all-distilroberta-v1 (Good Balance)": "sentence-transformers/all-distilroberta-v1",
+        "all-distilroberta-v1 (Good Balance)": "sentence-transformers/all-distilroberta-v1"
     }
 
 def read_pdf(file) -> str:
@@ -397,189 +402,400 @@ def should_reprocess(uploaded_files) -> bool:
     current_hash = get_files_hash(uploaded_files)
     return current_hash != st.session_state.last_file_hash
 
-# --------- App UI ---------
-st.title("BERT-based Plagiarism Checker (Enhanced)")
-st.caption("Upload PDFs: the **first** is the student document to check; the **rest** are reference documents.")
-
-# Model selection
-available_models = get_available_models()
-selected_model_name = st.selectbox(
-    "Choose Sentence-BERT Model:",
-    options=list(available_models.keys()),
-    help="Different models offer trade-offs between speed and quality"
-)
-selected_model = available_models[selected_model_name]
-
-uploaded_files = st.file_uploader(
-    "Upload 2 or more PDFs (first is the document to check)",
-    type=["pdf"],
-    accept_multiple_files=True
-)
-
-with st.expander("⚙️ Advanced Options", expanded=False):
-    RED_THRESHOLD = st.slider("Red threshold (likely copy/near-copy)", 0.50, 0.99, RED_THRESHOLD, 0.01)
-    ORANGE_THRESHOLD = st.slider("Orange threshold (likely paraphrase)", 0.50, RED_THRESHOLD, ORANGE_THRESHOLD, 0.01)
-    MAX_SENTENCES = st.number_input("Max sentences from student doc (safety cap)", 500, 10000, MAX_SENTENCES, 100)
+def display_ai_detection_results(ai_results: Dict, total_sentences: int):
+    """Display AI detection analysis results."""
+    overall_score = ai_results.get("overall_score", 0)
+    high_risk = ai_results.get("high_risk_sentences", 0)
+    medium_risk = ai_results.get("medium_risk_sentences", 0)
+    method_used = ai_results.get("method", "Unknown")
     
-    # View mode selection
-    view_mode = st.radio(
-        "Results Display Mode:",
-        ["Navigate Flagged Sentences", "Full Highlighted Document", "Both Views"],
-        help="Choose how you want to view the plagiarism results"
-    )
-
-if uploaded_files and len(uploaded_files) >= 2:
-    # Check if we can use cached results
-    needs_reprocessing = should_reprocess(uploaded_files)
+    # AI Detection Metrics
+    st.markdown("### 🤖 AI Detection Results")
+    col1, col2, col3, col4 = st.columns(4)
     
-    if needs_reprocessing:
-        # Reset processing state when new files are uploaded
-        st.session_state.current_flagged_index = 0
-        st.session_state.flagged_sentences = []
-        st.session_state.processing_complete = False
-        
-        model = load_model(selected_model)
-
-        # Read PDFs
-        with st.spinner("Extracting text from PDFs..."):
-            main_pdf = uploaded_files[0]
-            main_name = getattr(main_pdf, "name", "Student_Document.pdf")
-            main_text = read_pdf(main_pdf)
-
-            ref_files = uploaded_files[1:]
-            ref_names = [getattr(f, "name", f"Reference_{i+1}.pdf") for i, f in enumerate(ref_files)]
-            ref_texts = [read_pdf(f) for f in ref_files]
-
-        # Split to sentences
-        with st.spinner("Splitting into sentences..."):
-            main_sents = split_sentences(main_text)
-            ref_sents = []
-            ref_idx = []  # track which reference doc each sentence came from
-            for doc_i, t in enumerate(ref_texts):
-                sents = split_sentences(t)
-                ref_sents.extend(sents)
-                ref_idx.extend([doc_i] * len(sents))
-
-        if not main_sents:
-            st.warning("Couldn't extract sentences from the student document.")
-            st.stop()
-        if not ref_sents:
-            st.warning("Couldn't extract sentences from the reference documents.")
-            st.stop()
-
-        st.info(f"Processing {len(main_sents)} student sentences against {len(ref_sents)} reference sentences...")
-
-        # Embeddings with efficient batching
-        with st.spinner("Encoding sentences with Sentence-BERT... (first run may download the model)"):
-            main_emb = encode_sentences_efficiently(model, main_sents)
-            ref_emb = encode_sentences_efficiently(model, ref_sents)
-
-        # Similarities
-        with st.spinner("Computing similarities..."):
-            # For each student sentence, get best match among all reference sentences
-            sim = util.cos_sim(main_emb, ref_emb)  # shape: [len(main_sents), len(ref_sents)]
-            best_scores = sim.max(dim=1).values.cpu().numpy()  # [N_main]
-            best_idx = sim.argmax(dim=1).cpu().numpy()         # indices into ref_sents
-
-        # Build highlights and score
-        highlighted_fragments = []
-        flagged_rows: List[Tuple[str, float, str, str, int]] = []  # (student_sentence, score, ref_doc_name, ref_sentence, sentence_index)
-
-        red_count = 0
-        orange_count = 0
-        for i, sent in enumerate(main_sents):
-            score = float(best_scores[i])
-            ref_sent = ref_sents[int(best_idx[i])]
-            ref_doc_name = ref_names[int(ref_idx[int(best_idx[i])])]
-            
-            if score >= RED_THRESHOLD:
-                red_count += 1
-            elif score >= ORANGE_THRESHOLD:
-                orange_count += 1
-
-            highlighted_fragments.append(
-                make_highlight_html(sent, score, ref_doc_name, ref_sent)
-            )
-            if score >= ORANGE_THRESHOLD:
-                flagged_rows.append((sent, score, ref_doc_name, ref_sent, i))
-
-        # Store results in cache and session state
-        st.session_state.flagged_sentences = sorted(flagged_rows, key=lambda x: x[1], reverse=True)
-        st.session_state.processing_complete = True
-        st.session_state.last_file_hash = get_files_hash(uploaded_files)
-        st.session_state.cached_results = {
-            'highlighted_fragments': highlighted_fragments,
-            'red_count': red_count,
-            'orange_count': orange_count,
-            'total': len(main_sents),
-            'ref_names': ref_names
-        }
-        
-        st.success("✅ Processing complete! Results are now cached for faster navigation.")
+    col1.metric("AI Probability", f"{overall_score:.1%}")
+    col2.metric("High Risk Sentences", f"{high_risk}")
+    col3.metric("Medium Risk Sentences", f"{medium_risk}")
+    col4.metric("Human-like Sentences", f"{total_sentences - high_risk - medium_risk}")
     
+    # Method information
+    st.caption(f"Detection method: {method_used}")
+    
+    # Risk Assessment
+    if overall_score > 0.8:
+        st.error("🚨 VERY HIGH AI PROBABILITY - Content is very likely AI-generated!")
+    elif overall_score > 0.6:
+        st.error("⚠️ HIGH AI PROBABILITY - Content is likely AI-generated!")
+    elif overall_score > 0.4:
+        st.warning("⚠️ MODERATE AI PROBABILITY - Some content may be AI-generated.")
+    elif overall_score > 0.2:
+        st.info("ℹ️ LOW AI PROBABILITY - Content appears mostly human-written.")
     else:
-        # Use cached results
-        st.info("🚀 Using cached results - navigation will be lightning fast!")
+        st.success("✅ VERY LOW AI PROBABILITY - Content appears human-written.")
+    
+    # Detailed analysis if available
+    if "detailed_analysis" in ai_results:
+        with st.expander("🔍 Detailed Analysis", expanded=False):
+            details = ai_results["detailed_analysis"]
+            patterns = details.get("patterns", {})
+            
+            st.markdown("**Linguistic Pattern Analysis:**")
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if "avg_sentence_length" in patterns:
+                    st.metric("Avg Sentence Length", f"{patterns['avg_sentence_length']:.1f} words")
+                if "vocab_diversity" in patterns:
+                    st.metric("Vocabulary Diversity", f"{patterns['vocab_diversity']:.2%}")
+            
+            with col_b:
+                if "burstiness" in patterns:
+                    st.metric("Sentence Variation", f"{patterns['burstiness']:.2f}")
+                if "transition_frequency" in patterns:
+                    st.metric("Transition Words", f"{patterns['transition_frequency']:.1f}%")
+            
+            # Show detailed scores if available
+            if "detailed_scores" in ai_results:
+                st.markdown("**Component Scores:**")
+                detailed = ai_results["detailed_scores"]
+                for key, value in detailed.items():
+                    st.progress(value, text=f"{key.replace('_', ' ').title()}: {value:.2f}")
+    
+    # Sentence-level analysis if available
+    sentence_scores = ai_results.get("sentence_scores", [])
+    if sentence_scores and len(sentence_scores) > 0:
+        with st.expander("📊 Sentence-Level Analysis", expanded=False):
+            st.markdown("**AI Probability by Sentence:**")
+            
+            # Create a simple visualization
+            high_ai_sentences = [(i, score) for i, score in enumerate(sentence_scores) if score > 0.6]
+            
+            if high_ai_sentences:
+                st.markdown("**High AI Probability Sentences:**")
+                for i, (sent_idx, score) in enumerate(high_ai_sentences[:10]):  # Show top 10
+                    st.markdown(f"**Sentence {sent_idx + 1}:** {score:.1%} AI probability")
+            else:
+                st.info("No sentences show high AI probability.")
+    
+    # Additional information
+    if "perplexity" in ai_results:
+        st.markdown("---")
+        col_x, col_y = st.columns(2)
+        with col_x:
+            st.metric("Perplexity Score", f"{ai_results['perplexity']:.1f}")
+        with col_y:
+            st.metric("Perplexity Rating", f"{ai_results.get('perplexity_score', 0):.1%}")
+        
+        st.caption("Lower perplexity may indicate more predictable (AI-like) text.")
+    
+    # Download option for AI analysis
+    if st.button("⬇️ Download AI Analysis Report"):
+        report_data = generate_ai_report(ai_results, total_sentences)
+        st.download_button(
+            "Download Report",
+            data=report_data,
+            file_name="ai_detection_report.json",
+            mime="application/json"
+        )
+
+def generate_ai_report(ai_results: Dict, total_sentences: int) -> str:
+    """Generate a downloadable AI analysis report."""
+    import json
+    from datetime import datetime
+    
+    report = {
+        "analysis_date": datetime.now().isoformat(),
+        "total_sentences": total_sentences,
+        "method_used": ai_results.get("method", "Unknown"),
+        "overall_ai_probability": ai_results.get("overall_score", 0),
+        "high_risk_sentences": ai_results.get("high_risk_sentences", 0),
+        "medium_risk_sentences": ai_results.get("medium_risk_sentences", 0),
+        "sentence_scores": ai_results.get("sentence_scores", []),
+        "detailed_analysis": ai_results.get("detailed_analysis", {}),
+        "additional_metrics": {
+            k: v for k, v in ai_results.items() 
+            if k not in ["sentence_scores", "detailed_analysis", "available", "error"]
+        }
+    }
+    
+    return json.dumps(report, indent=2)
+
+# --------- App UI ---------
+st.title("📑 Academic Integrity Checker - Plagiarism & AI Detection")
+st.caption("Comprehensive tool for detecting plagiarism and AI-generated content")
+
+# Sidebar Navigation
+with st.sidebar:
+    st.markdown("## 🎯 Choose Analysis Mode")
+    
+    analysis_mode = st.radio(
+        "Select Analysis Type:",
+        ["📄 Direct Plagiarism Checker", "🤖 AI Content Detection"],
+        help="Choose between plagiarism detection or AI content analysis"
+    )
+    
+    st.markdown("---")
+    
+    if analysis_mode == "📄 Direct Plagiarism Checker":
+        st.markdown("### ⚙️ Plagiarism Settings")
+        
+        # Model selection
+        available_models = get_available_models()
+        selected_model_name = st.selectbox(
+            "Sentence-BERT Model:",
+            options=list(available_models.keys()),
+            help="Different models offer trade-offs between speed and quality"
+        )
+        selected_model = available_models[selected_model_name]
+        
+        # Thresholds
+        RED_THRESHOLD = st.slider("High Risk Threshold", 0.50, 0.99, 0.85, 0.01, help="Likely copy/near-copy")
+        ORANGE_THRESHOLD = st.slider("Medium Risk Threshold", 0.50, RED_THRESHOLD, 0.70, 0.01, help="Likely paraphrase")
+        MAX_SENTENCES = st.number_input("Max Sentences", 500, 10000, 5000, 100, help="Safety limit for processing")
+        
+        # View mode selection
+        view_mode = st.radio(
+            "Display Mode:",
+            ["Navigate Flagged", "Full Document", "Both Views"],
+            help="Choose how to view results"
+        )
+        
+    else:  # AI Content Detection
+        st.markdown("### 🤖 AI Detection Settings")
+        
+        # AI Detection Method Selection
+        available_methods = ai_detector.get_available_methods()
+        
+        method_options = {}
+        for key, info in available_methods.items():
+            if info["available"]:
+                method_options[info['name']] = key
+        
+        if not method_options:
+            st.error("No AI detection methods available.")
+        else:
+            selected_method_display = st.selectbox(
+                "Detection Method:",
+                options=list(method_options.keys()),
+                help="Choose AI detection approach"
+            )
+            selected_method = method_options[selected_method_display]
+            
+            # Method-specific configuration
+            method_info = available_methods[selected_method]
+            
+            if method_info.get("requires_internet"):
+                st.info("🌐 Requires internet")
+            if method_info.get("requires_api_key"):
+                st.warning("🔑 API key needed")
+            
+            # Store method config in session state
+            if 'ai_method_config' not in st.session_state:
+                st.session_state.ai_method_config = {}
+            
+            if selected_method == "pretrained":
+                model_choices = ai_detector.get_model_choices()
+                selected_ai_model = st.selectbox(
+                    "Pre-trained Model:",
+                    options=list(model_choices.keys())
+                )
+                st.session_state.ai_method_config = {
+                    "model_choice": model_choices[selected_ai_model]
+                }
+                
+                # Show performance information
+                with st.expander("🚀 Performance Info", expanded=False):
+                    perf_info = ai_detector.get_performance_info()
+                    for key, value in perf_info.items():
+                        st.text(f"{key}: {value}")
+                
+            elif selected_method == "gptzero_api":
+                api_key = st.text_input(
+                    "GPTZero API Key:",
+                    type="password",
+                    help="Get your key from https://gptzero.me/api"
+                )
+                st.session_state.ai_method_config = {"api_key": api_key}
+                
+            elif selected_method == "custom_api":
+                api_url = st.text_input(
+                    "API Endpoint:",
+                    placeholder="https://your-api.com/detect"
+                )
+                api_key = st.text_input(
+                    "API Key (optional):",
+                    type="password"
+                )
+                st.session_state.ai_method_config = {
+                    "api_url": api_url,
+                    "api_key": api_key
+                }
+            else:
+                st.session_state.ai_method_config = {}
+    
+    st.markdown("---")
+    st.markdown("### 📁 File Upload")
+
+# File upload based on analysis mode
+if analysis_mode == "📄 Direct Plagiarism Checker":
+    uploaded_files = st.file_uploader(
+        "Upload PDFs (first = student doc, rest = references):",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help="First PDF is the document to check, others are reference documents"
+    )
+else:
+    uploaded_files = st.file_uploader(
+        "Upload PDF to check for AI content:",
+        type=["pdf"],
+        accept_multiple_files=False,
+        help="Upload the document you want to analyze for AI-generated content"
+    )
+    # Convert single file to list for consistency
+    if uploaded_files:
+        uploaded_files = [uploaded_files]
+
+# Main processing logic based on analysis mode
+if analysis_mode == "📄 Direct Plagiarism Checker":
+    # Plagiarism Detection Mode
+    if uploaded_files and len(uploaded_files) >= 2:
+        # Check if we can use cached results
+        needs_reprocessing = should_reprocess(uploaded_files)
+        
+        if needs_reprocessing:
+            # Reset processing state when new files are uploaded
+            st.session_state.current_flagged_index = 0
+            st.session_state.flagged_sentences = []
+            st.session_state.processing_complete = False
+            
+            # Load model from sidebar selection
+            model = load_model(selected_model)
+
+            # Read PDFs
+            with st.spinner("Extracting text from PDFs..."):
+                main_pdf = uploaded_files[0]
+                main_name = getattr(main_pdf, "name", "Student_Document.pdf")
+                main_text = read_pdf(main_pdf)
+
+                ref_files = uploaded_files[1:]
+                ref_names = [getattr(f, "name", f"Reference_{i+1}.pdf") for i, f in enumerate(ref_files)]
+                ref_texts = [read_pdf(f) for f in ref_files]
+
+            # Split to sentences
+            with st.spinner("Splitting into sentences..."):
+                main_sents = split_sentences(main_text)
+                ref_sents = []
+                ref_idx = []  # track which reference doc each sentence came from
+                for doc_i, t in enumerate(ref_texts):
+                    sents = split_sentences(t)
+                    ref_sents.extend(sents)
+                    ref_idx.extend([doc_i] * len(sents))
+
+            if not main_sents:
+                st.warning("Couldn't extract sentences from the student document.")
+                st.stop()
+            if not ref_sents:
+                st.warning("Couldn't extract sentences from the reference documents.")
+                st.stop()
+
+            # Limit processing for safety
+            if len(main_sents) > MAX_SENTENCES:
+                st.warning(f"Document too long. Processing first {MAX_SENTENCES} sentences for safety.")
+                main_sents = main_sents[:MAX_SENTENCES]
+
+            st.info(f"Processing {len(main_sents)} student sentences against {len(ref_sents)} reference sentences...")
+
+            # Embeddings with efficient batching
+            with st.spinner("Encoding sentences with Sentence-BERT... (first run may download the model)"):
+                main_emb = encode_sentences_efficiently(model, main_sents)
+                ref_emb = encode_sentences_efficiently(model, ref_sents)
+
+            # Similarities
+            with st.spinner("Computing similarities..."):
+                # For each student sentence, get best match among all reference sentences
+                sim = util.cos_sim(main_emb, ref_emb)  # shape: [len(main_sents), len(ref_sents)]
+                best_scores = sim.max(dim=1).values.cpu().numpy()  # [N_main]
+                best_idx = sim.argmax(dim=1).cpu().numpy()         # indices into ref_sents
+
+            # Build highlights and score
+            highlighted_fragments = []
+            flagged_rows: List[Tuple[str, float, str, str, int]] = []  # (student_sentence, score, ref_doc_name, ref_sentence, sentence_index)
+
+            red_count = 0
+            orange_count = 0
+            for i, sent in enumerate(main_sents):
+                score = float(best_scores[i])
+                ref_sent = ref_sents[int(best_idx[i])]
+                ref_doc_name = ref_names[int(ref_idx[int(best_idx[i])])]
+                
+                if score >= RED_THRESHOLD:
+                    red_count += 1
+                elif score >= ORANGE_THRESHOLD:
+                    orange_count += 1
+
+                highlighted_fragments.append(
+                    make_highlight_html(sent, score, ref_doc_name, ref_sent)
+                )
+                if score >= ORANGE_THRESHOLD:
+                    flagged_rows.append((sent, score, ref_doc_name, ref_sent, i))
+
+            # Store results in cache and session state
+            st.session_state.flagged_sentences = sorted(flagged_rows, key=lambda x: x[1], reverse=True)
+            st.session_state.processing_complete = True
+            st.session_state.last_file_hash = get_files_hash(uploaded_files)
+            st.session_state.cached_results = {
+                'highlighted_fragments': highlighted_fragments,
+                'red_count': red_count,
+                'orange_count': orange_count,
+                'total': len(main_sents),
+                'ref_names': ref_names
+            }
+            
+            st.success("✅ Processing complete! Results are now cached for faster navigation.")
+        
+        else:
+            # Use cached results
+            st.info("🚀 Using cached results - navigation will be lightning fast!")
+            cached = st.session_state.cached_results
+            highlighted_fragments = cached['highlighted_fragments']
+            red_count = cached['red_count']
+            orange_count = cached['orange_count']
+            total = cached['total']
+        
+        # Display results (same for both cached and fresh)
         cached = st.session_state.cached_results
-        highlighted_fragments = cached['highlighted_fragments']
+        total = cached['total']
         red_count = cached['red_count']
         orange_count = cached['orange_count']
-        total = cached['total']
-    
-    # Display results (same for both cached and fresh)
-    cached = st.session_state.cached_results
-    total = cached['total']
-    red_count = cached['red_count']
-    orange_count = cached['orange_count']
-    highlighted_fragments = cached['highlighted_fragments']
-    
-    plag_fraction = (red_count + orange_count) / max(1, total)
-    
-    # Metrics display
-    st.markdown("### 📊 Analysis Results")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Overall Plagiarism Score", f"{plag_fraction:.2%}")
-    col2.metric("High Risk (Red)", f"{red_count}")
-    col3.metric("Medium Risk (Orange)", f"{orange_count}")
-    col4.metric("Total Sentences", f"{total}")
-
-    # Risk assessment
-    if plag_fraction > 0.3:
-        st.error("⚠️ HIGH PLAGIARISM RISK detected!")
-    elif plag_fraction > 0.1:
-        st.warning("⚠️ MODERATE PLAGIARISM RISK detected.")
-    else:
-        st.success("✅ LOW PLAGIARISM RISK detected.")
-
-    st.markdown("---")
-
-    # Display based on selected view mode
-    if view_mode == "Navigate Flagged Sentences":
-        st.markdown("### 🔍 Navigate Flagged Sentences")
-        navigate_flagged_sentences_fast()
+        highlighted_fragments = cached['highlighted_fragments']
         
-    elif view_mode == "Full Highlighted Document":
-        st.markdown("### 📄 Full Highlighted Document")
-        st.caption("Hover over highlighted text to see similarity scores and source matches.")
-        html_body = "<p>" + " ".join(highlighted_fragments) + "</p>"
-        st.markdown(html_body, unsafe_allow_html=True)
-
-        # Downloadable HTML report
-        report_html = build_download_html(html_body)
-        st.download_button(
-            "⬇️ Download HTML Report",
-            data=report_html,
-            file_name="bert_plagiarism_report.html",
-            mime="text/html"
-        )
-    
-    else:  # Both Views
-        tab1, tab2 = st.tabs(["🔍 Navigate Flagged", "📄 Full Document"])
+        plag_fraction = (red_count + orange_count) / max(1, total)
         
-        with tab1:
+        # Metrics display
+        st.markdown("### 📊 Plagiarism Analysis Results")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Overall Plagiarism Score", f"{plag_fraction:.2%}")
+        col2.metric("High Risk (Red)", f"{red_count}")
+        col3.metric("Medium Risk (Orange)", f"{orange_count}")
+        col4.metric("Total Sentences", f"{total}")
+
+        # Risk assessment
+        if plag_fraction > 0.3:
+            st.error("⚠️ HIGH PLAGIARISM RISK detected!")
+        elif plag_fraction > 0.1:
+            st.warning("⚠️ MODERATE PLAGIARISM RISK detected.")
+        else:
+            st.success("✅ LOW PLAGIARISM RISK detected.")
+
+        st.markdown("---")
+
+        # Display based on selected view mode
+        if view_mode == "Navigate Flagged":
+            st.markdown("### 🔍 Navigate Flagged Sentences")
             navigate_flagged_sentences_fast()
-        
-        with tab2:
+            
+        elif view_mode == "Full Document":
+            st.markdown("### 📄 Full Highlighted Document")
             st.caption("Hover over highlighted text to see similarity scores and source matches.")
             html_body = "<p>" + " ".join(highlighted_fragments) + "</p>"
             st.markdown(html_body, unsafe_allow_html=True)
@@ -592,14 +808,84 @@ if uploaded_files and len(uploaded_files) >= 2:
                 file_name="bert_plagiarism_report.html",
                 mime="text/html"
             )
+        
+        else:  # Both Views
+            tab1, tab2 = st.tabs(["🔍 Navigate Flagged", "📄 Full Document"])
+            
+            with tab1:
+                navigate_flagged_sentences_fast()
+            
+            with tab2:
+                st.caption("Hover over highlighted text to see similarity scores and source matches.")
+                html_body = "<p>" + " ".join(highlighted_fragments) + "</p>"
+                st.markdown(html_body, unsafe_allow_html=True)
+
+                # Downloadable HTML report
+                report_html = build_download_html(html_body)
+                st.download_button(
+                    "⬇️ Download HTML Report",
+                    data=report_html,
+                    file_name="bert_plagiarism_report.html",
+                    mime="text/html"
+                )
+
+    else:
+        st.info("� Upload at least **2 PDFs** — the first is checked against the others.")
+        
+        # Reset session state when no files are uploaded
+        if uploaded_files is None or len(uploaded_files) < 2:
+            st.session_state.processing_complete = False
+            st.session_state.current_flagged_index = 0
+            st.session_state.flagged_sentences = []
+            st.session_state.cached_results = None
+            st.session_state.last_file_hash = None
 
 else:
-    st.info("📁 Upload at least **2 PDFs** — the first is checked against the others.")
+    # AI Content Detection Mode
+    if uploaded_files and len(uploaded_files) >= 1:
+        st.markdown("### 🤖 AI Content Detection Analysis")
+        
+        # Get method configuration from session state
+        method_config = st.session_state.get('ai_method_config', {})
+        
+        # Validation based on method
+        can_analyze = True
+        error_message = ""
+        
+        if selected_method == "gptzero_api" and not method_config.get("api_key"):
+            can_analyze = False
+            error_message = "GPTZero API key is required."
+        elif selected_method == "custom_api" and not method_config.get("api_url"):
+            can_analyze = False
+            error_message = "Custom API URL is required."
+        
+        if can_analyze:
+            if st.button("🚀 Analyze for AI Content", type="primary", use_container_width=True):
+                with st.spinner(f"Analyzing content with {selected_method_display}..."):
+                    # Get the document text and sentences
+                    main_pdf = uploaded_files[0]
+                    main_text = read_pdf(main_pdf)
+                    main_sents = split_sentences(main_text)
+                    
+                    if not main_text or not main_sents:
+                        st.error("Could not extract text from the PDF. Please check the file.")
+                    else:
+                        # Run AI detection
+                        ai_results = ai_detector.analyze_ai_content(
+                            main_text, 
+                            main_sents, 
+                            method=selected_method,
+                            **method_config
+                        )
+                        
+                        # Display results
+                        if ai_results.get("available", False):
+                            display_ai_detection_results(ai_results, len(main_sents))
+                        else:
+                            st.error(f"AI detection failed: {ai_results.get('error', 'Unknown error')}")
+        else:
+            st.error(error_message)
+            st.info("Please configure the required settings in the sidebar.")
     
-    # Reset session state when no files are uploaded
-    if uploaded_files is None or len(uploaded_files) < 2:
-        st.session_state.processing_complete = False
-        st.session_state.current_flagged_index = 0
-        st.session_state.flagged_sentences = []
-        st.session_state.cached_results = None
-        st.session_state.last_file_hash = None
+    else:
+        st.info("📁 Upload a PDF document to analyze for AI-generated content.")

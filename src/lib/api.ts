@@ -20,6 +20,24 @@ export interface AnalysisResult {
   processing_time: number;
 }
 
+// AI Detection types
+export interface AIDetectionResult {
+  ai_probability: number;
+  ai_confidence: number;
+  method_used: string;
+  sentence_scores: Array<{
+    sentence: string;
+    ai_probability: number;
+    confidence: number;
+  }>;
+  document_stats: {
+    total_sentences: number;
+    avg_ai_probability: number;
+    high_risk_sentences: number;
+  };
+  processing_time: number;
+}
+
 export interface ApiStatus {
   status: string;
   model_loaded: boolean;
@@ -121,6 +139,42 @@ export class PlagiaSenseAPI {
         throw error;
       }
       throw new Error('Failed to analyze documents');
+    }
+  }
+
+  async analyzeAI(file: File, method: string = 'general'): Promise<AIDetectionResult> {
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      throw new Error(`File ${file.name} is not a PDF. Only PDF files are supported.`);
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('files', file);
+      formData.append('method', method === 'general' ? 'pretrained' : method);
+      
+      // Add model choice for pretrained method
+      if (method === 'general' || method === 'pretrained') {
+        formData.append('model_choice', 'roberta-openai');
+      }
+
+      const response = await fetch(API_ENDPOINTS.AI_DETECTION, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(errorData.detail || `AI detection failed: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('AI detection error:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to analyze document for AI content');
     }
   }
 

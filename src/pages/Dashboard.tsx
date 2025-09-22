@@ -21,7 +21,9 @@ import {
   Plus,
   Calendar,
   X,
-  Loader2
+  Loader2,
+  Bot,
+  Search
 } from "lucide-react";
 
 const Dashboard = () => {
@@ -29,6 +31,7 @@ const Dashboard = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState("assignments");
+  const [analysisMode, setAnalysisMode] = useState("plagiarism"); // "plagiarism" or "ai_detection"
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -112,16 +115,17 @@ const Dashboard = () => {
     if (pdfFiles.length !== files.length) {
       toast({
         title: "Invalid file type",
-        description: "Only PDF files are supported for plagiarism detection.",
+        description: "Only PDF files are supported for analysis.",
         variant: "destructive",
       });
     }
 
     if (pdfFiles.length > 0) {
       setSelectedFiles(prev => [...prev, ...pdfFiles]);
+      const modeText = analysisMode === "plagiarism" ? "plagiarism detection" : "AI detection";
       toast({
         title: "Files added",
-        description: `${pdfFiles.length} PDF file(s) added successfully.`,
+        description: `${pdfFiles.length} PDF file(s) added for ${modeText}.`,
       });
     }
   };
@@ -131,10 +135,15 @@ const Dashboard = () => {
   };
 
   const handleUpload = async () => {
-    if (selectedFiles.length < 2) {
+    const minFiles = analysisMode === "plagiarism" ? 2 : 1;
+    if (selectedFiles.length < minFiles) {
+      const modeDescription = analysisMode === "plagiarism" 
+        ? "Please upload at least 2 PDF files (1 student document + 1 reference document)."
+        : "Please upload at least 1 PDF file for AI detection.";
+      
       toast({
         title: "Insufficient files",
-        description: "Please upload at least 2 PDF files (1 student document + 1 reference document).",
+        description: modeDescription,
         variant: "destructive",
       });
       return;
@@ -155,20 +164,37 @@ const Dashboard = () => {
         });
       }, 1000);
 
-      const result = await api.analyzePlagiarism(selectedFiles);
+      let result;
+      if (analysisMode === "plagiarism") {
+        result = await api.analyzePlagiarism(selectedFiles);
+      } else {
+        // AI Detection analysis
+        result = await api.analyzeAI(selectedFiles[0]); // Only first file for AI detection
+      }
       
       clearInterval(progressInterval);
       setUploadProgress(100);
       setAnalysis(result);
 
+      const modeText = analysisMode === "plagiarism" ? "plagiarism" : "AI content";
+      const scoreText = analysisMode === "plagiarism" 
+        ? `Overall plagiarism score: ${(result.overall_score * 100).toFixed(1)}%`
+        : `AI probability: ${(result.ai_probability * 100).toFixed(1)}%`;
+
       toast({
         title: "Analysis complete!",
-        description: `Document analyzed successfully. Overall plagiarism score: ${(result.overall_score * 100).toFixed(1)}%`,
+        description: `Document analyzed for ${modeText}. ${scoreText}`,
       });
 
       // Navigate to results after a brief delay
       setTimeout(() => {
-        navigate("/reports/new", { state: { analysisResult: result, filename: selectedFiles[0].name } });
+        navigate("/reports/latest", { 
+          state: { 
+            analysisResult: result, 
+            filename: selectedFiles[0].name,
+            analysisMode: analysisMode
+          } 
+        });
       }, 1500);
 
     } catch (error) {
@@ -287,6 +313,44 @@ const Dashboard = () => {
                 </Card>
               </div>
 
+              {/* Analysis Mode Selector */}
+              <Card className="p-6 glass-card">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Analysis Type</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Button
+                      variant={analysisMode === "plagiarism" ? "default" : "outline"}
+                      className="h-auto p-4 flex flex-col gap-2"
+                      onClick={() => {
+                        setAnalysisMode("plagiarism");
+                        setSelectedFiles([]); // Clear files when switching modes
+                      }}
+                    >
+                      <Search className="h-6 w-6" />
+                      <div className="text-center">
+                        <div className="font-medium">Plagiarism Detection</div>
+                        <div className="text-xs opacity-75">Compare against references</div>
+                      </div>
+                    </Button>
+                    
+                    <Button
+                      variant={analysisMode === "ai_detection" ? "default" : "outline"}
+                      className="h-auto p-4 flex flex-col gap-2"
+                      onClick={() => {
+                        setAnalysisMode("ai_detection");
+                        setSelectedFiles([]); // Clear files when switching modes
+                      }}
+                    >
+                      <Bot className="h-6 w-6" />
+                      <div className="text-center">
+                        <div className="font-medium">AI Detection</div>
+                        <div className="text-xs opacity-75">Detect AI-generated content</div>
+                      </div>
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+
               {/* Upload Section */}
               <Card className="p-8 glass-card">
                 <div className="text-center space-y-4">
@@ -294,9 +358,14 @@ const Dashboard = () => {
                     <Upload className="h-12 w-12 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-semibold mb-2">Upload New Assignment</h3>
+                    <h3 className="text-xl font-semibold mb-2">
+                      {analysisMode === "plagiarism" ? "Upload Assignment for Plagiarism Check" : "Upload Document for AI Detection"}
+                    </h3>
                     <p className="text-muted-foreground mb-6">
-                      Upload PDFs: first is the student document, rest are reference documents
+                      {analysisMode === "plagiarism" 
+                        ? "Upload PDFs: first is the student document, rest are reference documents"
+                        : "Upload a PDF document to analyze for AI-generated content"
+                      }
                     </p>
                   </div>
 
@@ -342,7 +411,10 @@ const Dashboard = () => {
                         <div>
                           <p className="text-lg font-medium">Drop PDF files here or click to select</p>
                           <p className="text-sm text-muted-foreground">
-                            Upload at least 2 PDFs (student document + reference documents)
+                            {analysisMode === "plagiarism" 
+                              ? "Upload at least 2 PDFs (student document + reference documents)"
+                              : "Upload 1 PDF document for AI detection"
+                            }
                           </p>
                         </div>
                       </div>
@@ -362,8 +434,9 @@ const Dashboard = () => {
                                 <p className="text-sm font-medium">{file.name}</p>
                                 <p className="text-xs text-muted-foreground">
                                   {(file.size / 1024 / 1024).toFixed(2)} MB
-                                  {index === 0 && " (Student Document)"}
-                                  {index > 0 && " (Reference)"}
+                                  {analysisMode === "plagiarism" && index === 0 && " (Student Document)"}
+                                  {analysisMode === "plagiarism" && index > 0 && " (Reference)"}
+                                  {analysisMode === "ai_detection" && " (Document to analyze)"}
                                 </p>
                               </div>
                             </div>
@@ -385,14 +458,18 @@ const Dashboard = () => {
                   )}
 
                   {/* Upload Button */}
-                  {selectedFiles.length >= 2 && !isUploading && (
+                  {((analysisMode === "plagiarism" && selectedFiles.length >= 2) || 
+                    (analysisMode === "ai_detection" && selectedFiles.length >= 1)) && !isUploading && (
                     <Button 
                       onClick={handleUpload}
                       className="btn-premium bg-gradient-primary mt-4"
                       size="lg"
                     >
                       <Upload className="mr-2 h-5 w-5" />
-                      Analyze {selectedFiles.length} Documents
+                      {analysisMode === "plagiarism" 
+                        ? `Analyze ${selectedFiles.length} Documents for Plagiarism`
+                        : "Analyze Document for AI Content"
+                      }
                     </Button>
                   )}
                 </div>

@@ -7,7 +7,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import CircularProgress from "@/components/circular-progress";
 import AnimatedBackground from "@/components/animated-background";
-import { AnalysisResult, FlaggedSentence } from "@/lib/api";
+import { AnalysisResult, FlaggedSentence, AIDetectionResult } from "@/lib/api";
 import { 
   ArrowLeft,
   FileText,
@@ -18,7 +18,9 @@ import {
   Download,
   Lightbulb,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Bot,
+  Search
 } from "lucide-react";
 
 const Reports = () => {
@@ -30,11 +32,21 @@ const Reports = () => {
   const [currentFlaggedIndex, setCurrentFlaggedIndex] = useState(0);
   
   // Get analysis result from navigation state or use mock data
-  const analysisResult: AnalysisResult | null = location.state?.analysisResult || null;
+  const analysisResult: AnalysisResult | AIDetectionResult | null = location.state?.analysisResult || null;
   const filename = location.state?.filename || "Sample_Document.pdf";
+  const analysisMode = location.state?.analysisMode || "plagiarism";
+
+  // Type guards to distinguish between result types
+  const isPlagiarismResult = (result: any): result is AnalysisResult => {
+    return result && 'overall_score' in result && 'flagged_sentences' in result;
+  };
+
+  const isAIDetectionResult = (result: any): result is AIDetectionResult => {
+    return result && 'ai_probability' in result && 'sentence_scores' in result;
+  };
   
   // Mock data for demonstration if no real data
-  const mockData: AnalysisResult = {
+  const mockPlagiarismData: AnalysisResult = {
     overall_score: 0.15,
     red_count: 2,
     orange_count: 3,
@@ -61,8 +73,56 @@ const Reports = () => {
     processing_time: 45.2
   };
 
-  const reportData = analysisResult || mockData;
-  const plagiarismScore = Math.round(reportData.overall_score * 100);
+  const mockAIData: AIDetectionResult = {
+    ai_probability: 0.85,
+    ai_confidence: 0.92,
+    method_used: "pretrained",
+    sentence_scores: [
+      {
+        sentence: "Artificial intelligence has revolutionized the way we approach complex problem-solving in modern technology.",
+        ai_probability: 0.90,
+        confidence: 0.95
+      },
+      {
+        sentence: "Machine learning algorithms can process vast amounts of data to identify patterns that humans might miss.",
+        ai_probability: 0.88,
+        confidence: 0.92
+      }
+    ],
+    document_stats: {
+      total_sentences: 25,
+      avg_ai_probability: 0.85,
+      high_risk_sentences: 8
+    },
+    processing_time: 12.5
+  };
+
+  // Determine which data to use and what type it is
+  let reportData: AnalysisResult | AIDetectionResult;
+  let isAIDetection = false;
+
+  if (analysisResult) {
+    reportData = analysisResult;
+    isAIDetection = isAIDetectionResult(analysisResult);
+  } else {
+    // Use appropriate mock data based on analysis mode
+    if (analysisMode === "ai_detection") {
+      reportData = mockAIData;
+      isAIDetection = true;
+    } else {
+      reportData = mockPlagiarismData;
+      isAIDetection = false;
+    }
+  }
+
+  const reportData = analysisResult || (analysisMode === "ai_detection" ? mockAIData : mockPlagiarismData);
+
+  // For now, we'll always show plagiarism-style data to avoid type issues
+  // TODO: Full AI detection support in reports
+  const displayData = isPlagiarismResult(reportData) ? reportData : mockPlagiarismData;
+  const plagiarismScore = isPlagiarismResult(reportData) 
+    ? Math.round(reportData.overall_score * 100)
+    : Math.round((reportData as AIDetectionResult).ai_probability * 100);
   const submissionDate = new Date().toISOString().split('T')[0];
 
   // Sample text with highlighting
@@ -252,19 +312,19 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 <span class="label">Overall Similarity</span>
             </div>
             <div class="metadata-item">
-                <span class="value">${reportData.total_sentences}</span>
+                <span class="value">${displayData.total_sentences}</span>
                 <span class="label">Total Sentences</span>
             </div>
             <div class="metadata-item">
-                <span class="value score-high">${reportData.red_count}</span>
+                <span class="value score-high">${displayData.red_count}</span>
                 <span class="label">High Risk</span>
             </div>
             <div class="metadata-item">
-                <span class="value score-medium">${reportData.orange_count}</span>
+                <span class="value score-medium">${displayData.orange_count}</span>
                 <span class="label">Medium Risk</span>
             </div>
             <div class="metadata-item">
-                <span class="value">${reportData.flagged_sentences.length}</span>
+                <span class="value">${displayData.flagged_sentences.length}</span>
                 <span class="label">Flagged Sentences</span>
             </div>
             <div class="metadata-item">
@@ -281,9 +341,9 @@ Over 70 million people died during World War II, making it the deadliest conflic
         </div>
 
         <h2 class="section-title">📋 Flagged Content Analysis</h2>
-        ${reportData.flagged_sentences.length === 0 ? 
+        ${displayData.flagged_sentences.length === 0 ? 
             '<p style="text-align: center; color: #16a34a; font-size: 1.1em; padding: 20px;">🎉 No flagged content found. The document appears to be original.</p>' :
-            reportData.flagged_sentences.map((sentence, index) => `
+            displayData.flagged_sentences.map((sentence, index) => `
             <div class="sentence-item ${sentence.risk_level === 'HIGH' ? 'high-risk' : 'medium-risk'}">
                 <div class="sentence-header">
                     <h4 style="margin: 0;">Flagged Content #${index + 1}</h4>
@@ -310,9 +370,9 @@ Over 70 million people died during World War II, making it the deadliest conflic
 
         <h2 class="section-title">💡 Recommendations</h2>
         <div style="background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #6366f1;">
-            ${reportData.flagged_sentences.length > 0 ? `
+            ${displayData.flagged_sentences.length > 0 ? `
                 <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>Review Flagged Content:</strong> Examine the ${reportData.flagged_sentences.length} flagged sentence(s) above for potential plagiarism.</li>
+                    <li><strong>Review Flagged Content:</strong> Examine the ${displayData.flagged_sentences.length} flagged sentence(s) above for potential plagiarism.</li>
                     <li><strong>Paraphrase:</strong> Rewrite similar content in your own words while maintaining the original meaning.</li>
                     <li><strong>Add Citations:</strong> Properly cite any referenced sources to avoid plagiarism.</li>
                     <li><strong>Original Analysis:</strong> Include more personal insights and original analysis.</li>
@@ -420,15 +480,15 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <div className="text-2xl font-bold">{reportData.total_sentences}</div>
+                    <div className="text-2xl font-bold">{displayData.total_sentences}</div>
                     <div className="text-sm text-muted-foreground">Total Sentences</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-destructive">{reportData.flagged_sentences.length}</div>
+                    <div className="text-2xl font-bold text-destructive">{displayData.flagged_sentences.length}</div>
                     <div className="text-sm text-muted-foreground">Flagged</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{reportData.red_count + reportData.orange_count}</div>
+                    <div className="text-2xl font-bold">{displayData.red_count + displayData.orange_count}</div>
                     <div className="text-sm text-muted-foreground">Issues Found</div>
                   </div>
                 </div>
@@ -436,13 +496,13 @@ Over 70 million people died during World War II, making it the deadliest conflic
             </Card>
 
             {/* Flagged Sentences Navigation */}
-            {reportData.flagged_sentences.length > 0 && (
+            {displayData.flagged_sentences.length > 0 && (
               <Card className="glass-card">
                 <div className="p-6 border-b">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Eye className="h-5 w-5" />
-                      Flagged Sentences ({reportData.flagged_sentences.length})
+                      Flagged Sentences ({displayData.flagged_sentences.length})
                     </h3>
                     <div className="flex items-center gap-2">
                       <Button
@@ -454,13 +514,13 @@ Over 70 million people died during World War II, making it the deadliest conflic
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
                       <span className="text-sm text-muted-foreground">
-                        {currentFlaggedIndex + 1} of {reportData.flagged_sentences.length}
+                        {currentFlaggedIndex + 1} of {displayData.flagged_sentences.length}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setCurrentFlaggedIndex(Math.min(reportData.flagged_sentences.length - 1, currentFlaggedIndex + 1))}
-                        disabled={currentFlaggedIndex >= reportData.flagged_sentences.length - 1}
+                        onClick={() => setCurrentFlaggedIndex(Math.min(displayData.flagged_sentences.length - 1, currentFlaggedIndex + 1))}
+                        disabled={currentFlaggedIndex >= displayData.flagged_sentences.length - 1}
                       >
                         <ChevronRight className="h-4 w-4" />
                       </Button>
@@ -469,7 +529,7 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 </div>
                 <div className="p-6">
                   {(() => {
-                    const flagged = reportData.flagged_sentences[currentFlaggedIndex];
+                    const flagged = displayData.flagged_sentences[currentFlaggedIndex];
                     if (!flagged) return null;
                     return (
                       <div className="space-y-4">
@@ -524,11 +584,11 @@ Over 70 million people died during World War II, making it the deadliest conflic
               <div className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-destructive/5 rounded-lg">
-                    <div className="text-2xl font-bold text-destructive">{reportData.red_count}</div>
+                    <div className="text-2xl font-bold text-destructive">{displayData.red_count}</div>
                     <div className="text-sm text-muted-foreground">High Risk</div>
                   </div>
                   <div className="text-center p-4 bg-warning/5 rounded-lg">
-                    <div className="text-2xl font-bold text-warning">{reportData.orange_count}</div>
+                    <div className="text-2xl font-bold text-warning">{displayData.orange_count}</div>
                     <div className="text-sm text-muted-foreground">Medium Risk</div>
                   </div>
                 </div>
