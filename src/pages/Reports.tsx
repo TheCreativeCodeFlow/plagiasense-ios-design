@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 import CircularProgress from "@/components/circular-progress";
 import AnimatedBackground from "@/components/animated-background";
 import { AnalysisResult, FlaggedSentence } from "@/lib/api";
@@ -15,7 +16,6 @@ import {
   CheckCircle,
   Eye,
   Download,
-  Share,
   Lightbulb,
   ChevronLeft,
   ChevronRight
@@ -25,6 +25,7 @@ const Reports = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
+  const { toast } = useToast();
   const [animatedScore, setAnimatedScore] = useState(0);
   const [currentFlaggedIndex, setCurrentFlaggedIndex] = useState(0);
   
@@ -91,6 +92,269 @@ Over 70 million people died during World War II, making it the deadliest conflic
     return () => clearTimeout(timer);
   }, [plagiarismScore]);
 
+  const exportReport = () => {
+    const reportDate = new Date().toLocaleDateString();
+    const reportTime = new Date().toLocaleTimeString();
+    
+    // Generate detailed HTML report
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlagiaSense Analysis Report - ${filename}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #6366f1;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #6366f1;
+            margin: 0;
+            font-size: 2.2em;
+        }
+        .metadata {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .metadata-item {
+            text-align: center;
+        }
+        .metadata-item .value {
+            font-size: 1.8em;
+            font-weight: bold;
+            display: block;
+        }
+        .metadata-item .label {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .score-high { color: #dc2626; }
+        .score-medium { color: #f59e0b; }
+        .score-low { color: #16a34a; }
+        .flagged-sentences {
+            margin: 30px 0;
+        }
+        .sentence-item {
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #ddd;
+        }
+        .sentence-item.high-risk {
+            background: #fef2f2;
+            border-left-color: #dc2626;
+        }
+        .sentence-item.medium-risk {
+            background: #fffbeb;
+            border-left-color: #f59e0b;
+        }
+        .sentence-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .risk-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .risk-badge.high { background: #dc2626; color: white; }
+        .risk-badge.medium { background: #f59e0b; color: white; }
+        .similarity-score {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .student-text {
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 4px solid #6366f1;
+        }
+        .reference-text {
+            background: #f0f9ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 4px solid #0ea5e9;
+        }
+        .section-title {
+            font-size: 1.4em;
+            color: #374151;
+            margin: 30px 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .processing-info {
+            background: #f0f9ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border-left: 4px solid #0ea5e9;
+        }
+        @media print {
+            body { background: white; }
+            .container { box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 PlagiaSense Analysis Report</h1>
+            <p><strong>Document:</strong> ${filename}</p>
+            <p><strong>Generated:</strong> ${reportDate} at ${reportTime}</p>
+        </div>
+
+        <div class="metadata">
+            <div class="metadata-item">
+                <span class="value ${plagiarismScore >= 70 ? 'score-high' : plagiarismScore >= 30 ? 'score-medium' : 'score-low'}">
+                    ${plagiarismScore}%
+                </span>
+                <span class="label">Overall Similarity</span>
+            </div>
+            <div class="metadata-item">
+                <span class="value">${reportData.total_sentences}</span>
+                <span class="label">Total Sentences</span>
+            </div>
+            <div class="metadata-item">
+                <span class="value score-high">${reportData.red_count}</span>
+                <span class="label">High Risk</span>
+            </div>
+            <div class="metadata-item">
+                <span class="value score-medium">${reportData.orange_count}</span>
+                <span class="label">Medium Risk</span>
+            </div>
+            <div class="metadata-item">
+                <span class="value">${reportData.flagged_sentences.length}</span>
+                <span class="label">Flagged Sentences</span>
+            </div>
+            <div class="metadata-item">
+                <span class="value">${reportData.processing_time.toFixed(1)}s</span>
+                <span class="label">Processing Time</span>
+            </div>
+        </div>
+
+        <div class="processing-info">
+            <h3>Analysis Summary</h3>
+            <p><strong>Risk Assessment:</strong> ${plagiarismScore >= 70 ? '🚨 HIGH RISK - Significant similarity detected' : plagiarismScore >= 30 ? '⚠️ MODERATE RISK - Some similarities found' : '✅ LOW RISK - Minimal similarities detected'}</p>
+            <p><strong>Model Used:</strong> BERT-based Semantic Similarity Analysis</p>
+            <p><strong>Detection Method:</strong> Advanced semantic matching with context understanding</p>
+        </div>
+
+        <h2 class="section-title">📋 Flagged Content Analysis</h2>
+        ${reportData.flagged_sentences.length === 0 ? 
+            '<p style="text-align: center; color: #16a34a; font-size: 1.1em; padding: 20px;">🎉 No flagged content found. The document appears to be original.</p>' :
+            reportData.flagged_sentences.map((sentence, index) => `
+            <div class="sentence-item ${sentence.risk_level === 'HIGH' ? 'high-risk' : 'medium-risk'}">
+                <div class="sentence-header">
+                    <h4 style="margin: 0;">Flagged Content #${index + 1}</h4>
+                    <div>
+                        <span class="risk-badge ${sentence.risk_level.toLowerCase()}">${sentence.risk_level} Risk</span>
+                        <span class="similarity-score" style="margin-left: 10px;">Similarity: ${(sentence.score * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                
+                <div>
+                    <h5>📝 Student Text (Sentence ${sentence.sentence_index + 1}):</h5>
+                    <div class="student-text">${sentence.student_sentence}</div>
+                </div>
+                
+                <div>
+                    <h5>📚 Similar Reference Text:</h5>
+                    <div class="reference-text">
+                        ${sentence.reference_sentence}
+                        <br><small style="color: #0ea5e9; font-weight: bold;">Source: ${sentence.reference_document}</small>
+                    </div>
+                </div>
+            </div>
+        `).join('')}
+
+        <h2 class="section-title">💡 Recommendations</h2>
+        <div style="background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #6366f1;">
+            ${reportData.flagged_sentences.length > 0 ? `
+                <ul style="margin: 0; padding-left: 20px;">
+                    <li><strong>Review Flagged Content:</strong> Examine the ${reportData.flagged_sentences.length} flagged sentence(s) above for potential plagiarism.</li>
+                    <li><strong>Paraphrase:</strong> Rewrite similar content in your own words while maintaining the original meaning.</li>
+                    <li><strong>Add Citations:</strong> Properly cite any referenced sources to avoid plagiarism.</li>
+                    <li><strong>Original Analysis:</strong> Include more personal insights and original analysis.</li>
+                    <li><strong>Vary Sentence Structure:</strong> Use different sentence patterns and vocabulary.</li>
+                </ul>
+            ` : `
+                <p style="margin: 0; color: #16a34a;">✅ <strong>Excellent Work!</strong> No significant similarities detected. The document demonstrates good originality.</p>
+            `}
+        </div>
+
+        <div class="footer">
+            <p><strong>PlagiaSense</strong> - AI-Powered Plagiarism Detection</p>
+            <p>This report was generated using advanced BERT-based semantic analysis</p>
+            <p>For questions about this report, please consult your instructor or academic integrity guidelines</p>
+        </div>
+    </div>
+</body>
+</html>`;
+
+    // Create and download the file
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const cleanFilename = filename.replace(/\.[^/.]+$/, ""); // Remove extension
+    link.download = `PlagiaSense_Report_${cleanFilename}_${timestamp}.html`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    // Show success notification
+    toast({
+      title: "Report exported successfully!",
+      description: `Downloaded as ${link.download}`,
+    });
+  };
+
   const getScoreColor = (score: number) => {
     if (score >= 70) return "text-destructive";
     if (score >= 30) return "text-warning";
@@ -123,13 +387,14 @@ Over 70 million people died during World War II, making it the deadliest conflic
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm">
-              <Share className="h-4 w-4 mr-2" />
-              Share
-            </Button>
-            <Button variant="outline" size="sm">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={exportReport}
+              className="hover:bg-primary/10 transition-smooth"
+            >
               <Download className="h-4 w-4 mr-2" />
-              Export
+              Export Report
             </Button>
             <ThemeToggle />
           </div>
