@@ -153,28 +153,32 @@ const Landing = () => {
                 icon: Brain,
                 title: "Semantic Analysis",
                 description: "Deep learning models detect meaning-based similarities and paraphrasing attempts",
-                color: "primary",
+                iconBg: "bg-primary/10",
+                iconColor: "text-primary",
                 delay: "0s"
               },
               {
                 icon: Globe,
                 title: "Global Coverage",
                 description: "Support for 100+ languages with native cultural context understanding",
-                color: "accent",
+                iconBg: "bg-accent/10",
+                iconColor: "text-accent",
                 delay: "0.1s"
               },
               {
                 icon: Zap,
                 title: "Real-time Processing",
                 description: "Lightning-fast analysis with results in seconds, not minutes",
-                color: "warning",
+                iconBg: "bg-warning/10",
+                iconColor: "text-warning",
                 delay: "0.2s"
               },
               {
                 icon: CheckCircle,
                 title: "Visual Insights",
                 description: "Interactive reports with heatmaps, highlights, and actionable suggestions",
-                color: "success",
+                iconBg: "bg-success/10",
+                iconColor: "text-success",
                 delay: "0.3s"
               }
             ].map((feature, index) => (
@@ -185,8 +189,8 @@ const Landing = () => {
               >
                 <div className="absolute inset-0 bg-gradient-glow opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                 <div className="relative z-10">
-                  <div className={`p-4 bg-${feature.color}/10 rounded-xl w-fit mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                    <feature.icon className={`h-8 w-8 text-${feature.color}`} />
+                  <div className={`p-4 ${feature.iconBg} rounded-xl w-fit mb-6 group-hover:scale-110 transition-transform duration-300`}>
+                    <feature.icon className={`h-8 w-8 ${feature.iconColor}`} />
                   </div>
                   <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
                   <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
