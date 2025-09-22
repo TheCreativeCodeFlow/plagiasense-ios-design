@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 import AnimatedBackground from "@/components/animated-background";
+import { api, AnalysisResult } from "@/lib/api";
 import { 
   Upload, 
   FileText, 
@@ -17,12 +19,21 @@ import {
   AlertTriangle,
   Eye,
   Plus,
-  Calendar
+  Calendar,
+  X,
+  Loader2
 } from "lucide-react";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState("assignments");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
 
   const sidebarItems = [
     { id: "assignments", icon: FileText, label: "Assignments" },
@@ -67,6 +78,109 @@ const Dashboard = () => {
     if (score >= 70) return "bg-destructive/10";
     if (score >= 30) return "bg-warning/10";
     return "bg-success/10";
+  };
+
+  // File handling functions
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    handleFiles(files);
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    handleFiles(files);
+  };
+
+  const handleFiles = (files: File[]) => {
+    // Filter only PDF files
+    const pdfFiles = files.filter(file => file.type === "application/pdf");
+    
+    if (pdfFiles.length !== files.length) {
+      toast({
+        title: "Invalid file type",
+        description: "Only PDF files are supported for plagiarism detection.",
+        variant: "destructive",
+      });
+    }
+
+    if (pdfFiles.length > 0) {
+      setSelectedFiles(prev => [...prev, ...pdfFiles]);
+      toast({
+        title: "Files added",
+        description: `${pdfFiles.length} PDF file(s) added successfully.`,
+      });
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpload = async () => {
+    if (selectedFiles.length < 2) {
+      toast({
+        title: "Insufficient files",
+        description: "Please upload at least 2 PDF files (1 student document + 1 reference document).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + Math.random() * 20;
+        });
+      }, 1000);
+
+      const result = await api.analyzePlagiarism(selectedFiles);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      setAnalysis(result);
+
+      toast({
+        title: "Analysis complete!",
+        description: `Document analyzed successfully. Overall plagiarism score: ${(result.overall_score * 100).toFixed(1)}%`,
+      });
+
+      // Navigate to results after a brief delay
+      setTimeout(() => {
+        navigate("/reports/new", { state: { analysisResult: result, filename: selectedFiles[0].name } });
+      }, 1500);
+
+    } catch (error) {
+      setUploadProgress(0);
+      toast({
+        title: "Analysis failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -182,23 +296,105 @@ const Dashboard = () => {
                   <div>
                     <h3 className="text-xl font-semibold mb-2">Upload New Assignment</h3>
                     <p className="text-muted-foreground mb-6">
-                      Drag and drop your document or click to select files
+                      Upload PDFs: first is the student document, rest are reference documents
                     </p>
                   </div>
-                  <div className="border-2 border-dashed border-border rounded-lg p-12 hover:border-primary/50 transition-smooth cursor-pointer">
-                    <div className="space-y-4">
-                      <Plus className="h-16 w-16 text-muted-foreground mx-auto" />
-                      <div>
-                        <p className="text-lg font-medium">Drop files here</p>
-                        <p className="text-sm text-muted-foreground">
-                          Supports PDF, DOCX, TXT files up to 10MB
-                        </p>
+
+                  {/* File Upload Area */}
+                  <div 
+                    className={`border-2 border-dashed rounded-lg p-12 transition-all duration-200 cursor-pointer ${
+                      dragActive 
+                        ? "border-primary bg-primary/5" 
+                        : "border-border hover:border-primary/50"
+                    }`}
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    
+                    {isUploading ? (
+                      <div className="space-y-4">
+                        <Loader2 className="h-16 w-16 text-primary mx-auto animate-spin" />
+                        <div>
+                          <p className="text-lg font-medium">Analyzing Documents...</p>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            This may take a few minutes depending on document size
+                          </p>
+                          <Progress value={uploadProgress} className="w-64 mx-auto" />
+                          <p className="text-xs text-muted-foreground mt-2">
+                            {uploadProgress.toFixed(0)}% complete
+                          </p>
+                        </div>
                       </div>
-                      <Button className="btn-premium bg-gradient-primary">
-                        Choose Files
-                      </Button>
-                    </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <Plus className="h-16 w-16 text-muted-foreground mx-auto" />
+                        <div>
+                          <p className="text-lg font-medium">Drop PDF files here or click to select</p>
+                          <p className="text-sm text-muted-foreground">
+                            Upload at least 2 PDFs (student document + reference documents)
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Selected Files */}
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-6 text-left">
+                      <h4 className="font-medium mb-3">Selected Files ({selectedFiles.length}):</h4>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {selectedFiles.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between bg-muted/20 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <FileText className="h-4 w-4 text-primary" />
+                              <div>
+                                <p className="text-sm font-medium">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                                  {index === 0 && " (Student Document)"}
+                                  {index > 0 && " (Reference)"}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeFile(index);
+                              }}
+                              disabled={isUploading}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upload Button */}
+                  {selectedFiles.length >= 2 && !isUploading && (
+                    <Button 
+                      onClick={handleUpload}
+                      className="btn-premium bg-gradient-primary mt-4"
+                      size="lg"
+                    >
+                      <Upload className="mr-2 h-5 w-5" />
+                      Analyze {selectedFiles.length} Documents
+                    </Button>
+                  )}
                 </div>
               </Card>
 

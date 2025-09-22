@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import CircularProgress from "@/components/circular-progress";
 import AnimatedBackground from "@/components/animated-background";
+import { AnalysisResult, FlaggedSentence } from "@/lib/api";
 import { 
   ArrowLeft,
   FileText,
@@ -15,51 +16,53 @@ import {
   Eye,
   Download,
   Share,
-  Lightbulb
+  Lightbulb,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 const Reports = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
   const [animatedScore, setAnimatedScore] = useState(0);
+  const [currentFlaggedIndex, setCurrentFlaggedIndex] = useState(0);
   
-  // Mock data for the report
-  const reportData = {
-    filename: "History_Essay_Final.docx",
-    submissionDate: "2024-01-15",
-    plagiarismScore: 92,
-    totalWords: 1247,
-    flaggedSentences: 23,
-    sources: [
+  // Get analysis result from navigation state or use mock data
+  const analysisResult: AnalysisResult | null = location.state?.analysisResult || null;
+  const filename = location.state?.filename || "Sample_Document.pdf";
+  
+  // Mock data for demonstration if no real data
+  const mockData: AnalysisResult = {
+    overall_score: 0.15,
+    red_count: 2,
+    orange_count: 3,
+    total_sentences: 45,
+    flagged_sentences: [
       {
-        id: 1,
-        url: "https://en.wikipedia.org/wiki/World_War_II",
-        title: "World War II - Wikipedia",
-        matches: 8,
-        confidence: 95
+        student_sentence: "World War II was a global war that lasted from 1939 to 1945, involving most of the world's nations.",
+        score: 0.92,
+        reference_document: "world_war_ii_reference.pdf",
+        reference_sentence: "World War II was a global war that took place from 1939 to 1945 and involved the majority of the world's countries.",
+        sentence_index: 3,
+        risk_level: "HIGH"
       },
       {
-        id: 2,
-        url: "https://www.britannica.com/event/World-War-II",
-        title: "World War II | Britannica",
-        matches: 12,
-        confidence: 88
-      },
-      {
-        id: 3,
-        url: "https://www.history.com/topics/world-war-ii",
-        title: "World War II History - History.com",
-        matches: 3,
-        confidence: 76
+        student_sentence: "The conflict resulted in significant casualties and changed the geopolitical landscape forever.",
+        score: 0.78,
+        reference_document: "history_textbook.pdf", 
+        reference_sentence: "This devastating conflict led to enormous casualties and permanently altered the global political landscape.",
+        sentence_index: 15,
+        risk_level: "MEDIUM"
       }
     ],
-    suggestions: [
-      "Rewrite the introduction paragraph to improve originality",
-      "Paraphrase the statistical data in paragraphs 3-5",
-      "Add more personal analysis and fewer direct quotes",
-      "Consider citing sources more explicitly for better attribution"
-    ]
+    highlighted_fragments: [],
+    processing_time: 45.2
   };
+
+  const reportData = analysisResult || mockData;
+  const plagiarismScore = Math.round(reportData.overall_score * 100);
+  const submissionDate = new Date().toISOString().split('T')[0];
 
   // Sample text with highlighting
   const sampleText = `World War II was a global war that lasted from 1939 to 1945. It involved the vast majority of the world's countries—including all of the great powers—forming two opposing military alliances: the Allies and the Axis. [FLAGGED: This sentence closely matches Wikipedia content] 
@@ -72,21 +75,21 @@ Over 70 million people died during World War II, making it the deadliest conflic
     // Animate the score
     const timer = setTimeout(() => {
       let current = 0;
-      const increment = reportData.plagiarismScore / 50;
+      const increment = plagiarismScore / 50;
       const animate = () => {
         current += increment;
-        if (current < reportData.plagiarismScore) {
+        if (current < plagiarismScore) {
           setAnimatedScore(Math.floor(current));
           requestAnimationFrame(animate);
         } else {
-          setAnimatedScore(reportData.plagiarismScore);
+          setAnimatedScore(plagiarismScore);
         }
       };
       animate();
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [reportData.plagiarismScore]);
+  }, [plagiarismScore]);
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return "text-destructive";
@@ -116,7 +119,7 @@ Over 70 million people died during World War II, making it the deadliest conflic
             </Button>
             <div>
               <h1 className="text-2xl font-semibold">Plagiarism Report</h1>
-              <p className="text-sm text-muted-foreground">{reportData.filename}</p>
+              <p className="text-sm text-muted-foreground">{filename}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -152,93 +155,122 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <div className="text-2xl font-bold">{reportData.totalWords}</div>
-                    <div className="text-sm text-muted-foreground">Total Words</div>
+                    <div className="text-2xl font-bold">{reportData.total_sentences}</div>
+                    <div className="text-sm text-muted-foreground">Total Sentences</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-destructive">{reportData.flaggedSentences}</div>
+                    <div className="text-2xl font-bold text-destructive">{reportData.flagged_sentences.length}</div>
                     <div className="text-sm text-muted-foreground">Flagged</div>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{reportData.sources.length}</div>
-                    <div className="text-sm text-muted-foreground">Sources</div>
+                    <div className="text-2xl font-bold">{reportData.red_count + reportData.orange_count}</div>
+                    <div className="text-sm text-muted-foreground">Issues Found</div>
                   </div>
                 </div>
               </div>
             </Card>
 
-            {/* Text Analysis */}
-            <Card className="glass-card">
-              <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Eye className="h-5 w-5" />
-                  Text Analysis
-                </h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4 text-sm leading-relaxed">
-                  {sampleText.split('\n\n').map((paragraph, index) => (
-                    <div key={index} className="space-y-2">
-                      {paragraph.includes('[FLAGGED:') ? (
-                        <div className="p-4 bg-destructive/10 border-l-4 border-destructive rounded-r">
-                          <div className="text-destructive font-medium flex items-center gap-2 mb-2">
-                            <AlertTriangle className="h-4 w-4" />
-                            Potential Plagiarism Detected
-                          </div>
-                          <p>{paragraph.split('[FLAGGED:')[0]}</p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {paragraph.split('[FLAGGED:')[1]?.replace(']', '')}
-                          </p>
-                        </div>
-                      ) : paragraph.includes('[ORIGINAL:') ? (
-                        <div className="p-4 bg-success/10 border-l-4 border-success rounded-r">
-                          <div className="text-success font-medium flex items-center gap-2 mb-2">
-                            <CheckCircle className="h-4 w-4" />
-                            Original Content
-                          </div>
-                          <p>{paragraph.split('[ORIGINAL:')[0]}</p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {paragraph.split('[ORIGINAL:')[1]?.replace(']', '')}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-foreground">{paragraph}</p>
-                      )}
+            {/* Flagged Sentences Navigation */}
+            {reportData.flagged_sentences.length > 0 && (
+              <Card className="glass-card">
+                <div className="p-6 border-b">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Eye className="h-5 w-5" />
+                      Flagged Sentences ({reportData.flagged_sentences.length})
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentFlaggedIndex(Math.max(0, currentFlaggedIndex - 1))}
+                        disabled={currentFlaggedIndex === 0}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {currentFlaggedIndex + 1} of {reportData.flagged_sentences.length}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentFlaggedIndex(Math.min(reportData.flagged_sentences.length - 1, currentFlaggedIndex + 1))}
+                        disabled={currentFlaggedIndex >= reportData.flagged_sentences.length - 1}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            </Card>
+                <div className="p-6">
+                  {(() => {
+                    const flagged = reportData.flagged_sentences[currentFlaggedIndex];
+                    if (!flagged) return null;
+                    return (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            flagged.risk_level === 'HIGH' 
+                              ? 'bg-destructive/10 text-destructive' 
+                              : 'bg-warning/10 text-warning'
+                          }`}>
+                            {flagged.risk_level} RISK - {(flagged.score * 100).toFixed(1)}% similarity
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            Sentence #{flagged.sentence_index + 1}
+                          </div>
+                        </div>
+                        
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div className="p-4 bg-destructive/5 border-l-4 border-destructive rounded-r">
+                            <div className="text-destructive font-medium flex items-center gap-2 mb-2">
+                              <AlertTriangle className="h-4 w-4" />
+                              Student Text
+                            </div>
+                            <p className="text-sm">{flagged.student_sentence}</p>
+                          </div>
+                          
+                          <div className="p-4 bg-primary/5 border-l-4 border-primary rounded-r">
+                            <div className="text-primary font-medium flex items-center gap-2 mb-2">
+                              <FileText className="h-4 w-4" />
+                              Reference Source
+                            </div>
+                            <p className="text-sm">{flagged.reference_sentence}</p>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Source: {flagged.reference_document}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Sources */}
+            {/* Analysis Summary */}
             <Card className="glass-card">
               <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold">Matched Sources</h3>
+                <h3 className="text-lg font-semibold">Analysis Summary</h3>
               </div>
               <div className="p-6 space-y-4">
-                {reportData.sources.map((source) => (
-                  <div key={source.id} className="space-y-3 pb-4 border-b last:border-b-0">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-sm line-clamp-2">{source.title}</h4>
-                        <p className="text-xs text-muted-foreground mt-1 truncate">{source.url}</p>
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 ml-2">
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{source.matches} matches</span>
-                      <div className="flex items-center gap-2">
-                        <Progress value={source.confidence} className="w-16 h-2" />
-                        <span className="text-xs font-medium">{source.confidence}%</span>
-                      </div>
-                    </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-4 bg-destructive/5 rounded-lg">
+                    <div className="text-2xl font-bold text-destructive">{reportData.red_count}</div>
+                    <div className="text-sm text-muted-foreground">High Risk</div>
                   </div>
-                ))}
+                  <div className="text-center p-4 bg-warning/5 rounded-lg">
+                    <div className="text-2xl font-bold text-warning">{reportData.orange_count}</div>
+                    <div className="text-sm text-muted-foreground">Medium Risk</div>
+                  </div>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <p>Processing Time: {reportData.processing_time.toFixed(1)}s</p>
+                  <p>Analysis completed using advanced BERT-based similarity detection</p>
+                </div>
               </div>
             </Card>
 
@@ -251,7 +283,12 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 </h3>
               </div>
               <div className="p-6 space-y-3">
-                {reportData.suggestions.map((suggestion, index) => (
+                {[
+                  "Review flagged sentences and rewrite in your own words",
+                  "Add proper citations for referenced material",
+                  "Paraphrase content while maintaining original meaning",
+                  "Ensure proper attribution for all sources used"
+                ].map((suggestion, index) => (
                   <div key={index} className="flex items-start gap-3 p-3 bg-primary/5 rounded-lg">
                     <div className="h-2 w-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
                     <p className="text-sm">{suggestion}</p>
@@ -269,8 +306,8 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 <div className="flex items-center gap-3">
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">{reportData.filename}</p>
-                    <p className="text-xs text-muted-foreground">Submitted {reportData.submissionDate}</p>
+                    <p className="text-sm font-medium">{filename}</p>
+                    <p className="text-xs text-muted-foreground">Analyzed on {submissionDate}</p>
                   </div>
                 </div>
               </div>

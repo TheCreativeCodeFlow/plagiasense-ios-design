@@ -1,73 +1,113 @@
-# Welcome to your Lovable project
+# PlagiaSense - AI-Powered Plagiarism Detection
 
-## Project info
+PlagiaSense is a modern, full-stack plagiarism detection application that combines a React frontend with a Python FastAPI backend powered by BERT (Bidirectional Encoder Representations from Transformers) for advanced semantic similarity analysis.
 
-**URL**: https://lovable.dev/projects/7e7f3051-e69a-4868-901e-ca786cc85d96
+## Features
 
-## How can I edit this code?
+### Frontend (React + TypeScript + Tailwind CSS)
+- 🎨 Modern iOS-inspired design with glassmorphism effects
+- 📱 Responsive design that works on all devices
+- 🌙 Dark/Light theme support
+- 📊 Interactive dashboard with file upload
+- 📈 Detailed plagiarism reports with visual insights
+- 🔍 Sentence-by-sentence analysis navigation
 
-There are several ways of editing your application.
+### Backend (FastAPI + BERT)
+- 🧠 BERT-powered semantic similarity detection
+- 📄 PDF document processing
+- 🌍 Multi-language support (100+ languages)
+- ⚡ Real-time analysis with progress tracking
+- 🔧 Configurable similarity thresholds
+- 📊 RESTful API with automatic documentation
 
-**Use Lovable**
+## Quick Start
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/7e7f3051-e69a-4868-901e-ca786cc85d96) and start prompting.
+### Option 1: Use the Startup Scripts (Recommended)
 
-Changes made via Lovable will be committed automatically to this repo.
+**Windows:**
+```bash
+# Double-click start.bat or run in terminal:
+start.bat
+```
 
-**Use your preferred IDE**
+**Linux/Mac:**
+```bash
+chmod +x start.sh
+./start.sh
+```
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Option 2: Manual Setup
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+**1. Install Dependencies**
 
-Follow these steps:
+Frontend:
+```bash
+npm install
+```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+Backend:
+```bash
+cd backend
+pip install -r requirements.txt
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+**2. Start the Services**
 
-# Step 3: Install the necessary dependencies.
-npm i
+Backend (Terminal 1):
+```bash
+cd backend
+python -m uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+Frontend (Terminal 2):
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Access Points
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- **Frontend Application**: http://localhost:8080 (or 8081 if 8080 is in use)
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+- **API Health Check**: http://localhost:8000/
 
-**Use GitHub Codespaces**
+## How to Use
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+1. **Upload Documents**: 
+   - Navigate to the Dashboard
+   - Upload at least 2 PDF files (first is student document, rest are references)
+   - Click "Analyze Documents"
 
-## What technologies are used for this project?
+2. **Review Results**:
+   - View overall plagiarism score and statistics
+   - Navigate through flagged sentences
+   - Review similarity scores and source matches
+   - Download detailed reports
 
-This project is built with:
+3. **Customize Analysis**:
+   - Adjust similarity thresholds via API
+   - Configure processing parameters
+   - Choose different BERT models for analysis
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Technology Stack
 
-## How can I deploy this project?
+### Frontend
+- React 18 with TypeScript
+- Vite (build tool)
+- Tailwind CSS (styling)
+- shadcn/ui (UI components)
+- React Router (navigation)
+- React Query (state management)
 
-Simply open [Lovable](https://lovable.dev/projects/7e7f3051-e69a-4868-901e-ca786cc85d96) and click on Share -> Publish.
+### Backend
+- FastAPI (Python web framework)
+- Sentence Transformers (BERT models)
+- PyTorch (machine learning)
+- pdfplumber (PDF processing)
+- NLTK (natural language processing)
 
-## Can I connect a custom domain to my Lovable project?
+## Original Lovable Project
 
-Yes, you can!
+**URL**: https://lovable.dev/projects/7e7f3051-e69a-4868-901e-ca786cc85d96
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+This project was originally created with Lovable and has been extended with a full Python backend for AI-powered plagiarism detection.
