@@ -1,27 +1,41 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import CircularProgress from "@/components/circular-progress";
 import AnimatedBackground from "@/components/animated-background";
-import { AnalysisResult, FlaggedSentence, AIDetectionResult } from "@/lib/api";
 import { 
   ArrowLeft,
   FileText,
   ExternalLink,
-  AlertTriangle,
   CheckCircle,
   Eye,
   Download,
-  Lightbulb,
   ChevronLeft,
   ChevronRight,
-  Bot,
-  Search
 } from "lucide-react";
+
+// Types for plagiarism analysis results
+export interface FlaggedSentence {
+  student_sentence: string;
+  score: number;
+  reference_document: string;
+  reference_sentence: string;
+  sentence_index: number;
+  risk_level: 'HIGH' | 'MEDIUM';
+}
+
+export interface AnalysisResult {
+  overall_score: number;
+  red_count: number;
+  orange_count: number;
+  total_sentences: number;
+  flagged_sentences: FlaggedSentence[];
+  highlighted_fragments: string[];
+  processing_time: number;
+}
 
 const Reports = () => {
   const navigate = useNavigate();
@@ -31,22 +45,12 @@ const Reports = () => {
   const [animatedScore, setAnimatedScore] = useState(0);
   const [currentFlaggedIndex, setCurrentFlaggedIndex] = useState(0);
   
-  // Get analysis result from navigation state or use mock data
-  const analysisResult: AnalysisResult | AIDetectionResult | null = location.state?.analysisResult || null;
+  // Get analysis result from navigation state
+  const analysisResult: AnalysisResult | null = location.state?.analysisResult || null;
   const filename = location.state?.filename || "Sample_Document.pdf";
-  const analysisMode = location.state?.analysisMode || "plagiarism";
 
-  // Type guards to distinguish between result types
-  const isPlagiarismResult = (result: any): result is AnalysisResult => {
-    return result && 'overall_score' in result && 'flagged_sentences' in result;
-  };
-
-  const isAIDetectionResult = (result: any): result is AIDetectionResult => {
-    return result && 'ai_probability' in result && 'sentence_scores' in result;
-  };
-  
-  // Mock data for demonstration if no real data
-  const mockPlagiarismData: AnalysisResult = {
+  // Mock data for demo purposes
+  const mockData: AnalysisResult = {
     overall_score: 0.15,
     red_count: 2,
     orange_count: 3,
@@ -73,90 +77,40 @@ const Reports = () => {
     processing_time: 45.2
   };
 
-  const mockAIData: AIDetectionResult = {
-    ai_probability: 0.85,
-    ai_confidence: 0.92,
-    method_used: "pretrained",
-    sentence_scores: [
-      {
-        sentence: "Artificial intelligence has revolutionized the way we approach complex problem-solving in modern technology.",
-        ai_probability: 0.90,
-        confidence: 0.95
-      },
-      {
-        sentence: "Machine learning algorithms can process vast amounts of data to identify patterns that humans might miss.",
-        ai_probability: 0.88,
-        confidence: 0.92
-      }
-    ],
-    document_stats: {
-      total_sentences: 25,
-      avg_ai_probability: 0.85,
-      high_risk_sentences: 8
-    },
-    processing_time: 12.5
-  };
-
-  // Determine which data to use and what type it is
-  let reportData: AnalysisResult | AIDetectionResult;
-  let isAIDetection = false;
-
-  if (analysisResult) {
-    reportData = analysisResult;
-    isAIDetection = isAIDetectionResult(analysisResult);
-  } else {
-    // Use appropriate mock data based on analysis mode
-    if (analysisMode === "ai_detection") {
-      reportData = mockAIData;
-      isAIDetection = true;
-    } else {
-      reportData = mockPlagiarismData;
-      isAIDetection = false;
-    }
-  }
-
-  const reportData = analysisResult || (analysisMode === "ai_detection" ? mockAIData : mockPlagiarismData);
-
-  // For now, we'll always show plagiarism-style data to avoid type issues
-  // TODO: Full AI detection support in reports
-  const displayData = isPlagiarismResult(reportData) ? reportData : mockPlagiarismData;
-  const plagiarismScore = isPlagiarismResult(reportData) 
-    ? Math.round(reportData.overall_score * 100)
-    : Math.round((reportData as AIDetectionResult).ai_probability * 100);
+  // Use either the passed analysis result or mock data
+  const finalData = analysisResult || mockData;
+  const scoreValue = Math.round(finalData.overall_score * 100);
   const submissionDate = new Date().toISOString().split('T')[0];
-
-  // Sample text with highlighting
-  const sampleText = `World War II was a global war that lasted from 1939 to 1945. It involved the vast majority of the world's countries—including all of the great powers—forming two opposing military alliances: the Allies and the Axis. [FLAGGED: This sentence closely matches Wikipedia content] 
-
-The war began with the German invasion of Poland in September 1939, which led Britain and France to declare war on Germany. [ORIGINAL: This is well-paraphrased content] 
-
-Over 70 million people died during World War II, making it the deadliest conflict in human history. [FLAGGED: Statistical information matches multiple sources] The war ended with the surrender of Japan in August 1945.`;
 
   useEffect(() => {
     // Animate the score
     const timer = setTimeout(() => {
       let current = 0;
-      const increment = plagiarismScore / 50;
+      const increment = scoreValue / 50;
       const animate = () => {
         current += increment;
-        if (current < plagiarismScore) {
+        if (current < scoreValue) {
           setAnimatedScore(Math.floor(current));
           requestAnimationFrame(animate);
         } else {
-          setAnimatedScore(plagiarismScore);
+          setAnimatedScore(scoreValue);
         }
       };
       animate();
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [plagiarismScore]);
+  }, [scoreValue]);
 
   const exportReport = () => {
     const reportDate = new Date().toLocaleDateString();
     const reportTime = new Date().toLocaleTimeString();
     
-    // Generate detailed HTML report
+    const riskAssessment = scoreValue >= 70 ? '🚨 HIGH RISK - Significant similarity detected' : 
+                          scoreValue >= 30 ? '⚠️ MODERATE RISK - Some similarities found' : 
+                          '✅ LOW RISK - Minimal similarities detected';
+
+    // Create and download the file
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -235,65 +189,6 @@ Over 70 million people died during World War II, making it the deadliest conflic
             background: #fffbeb;
             border-left-color: #f59e0b;
         }
-        .sentence-header {
-            display: flex;
-            justify-content: between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        .risk-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.8em;
-            font-weight: bold;
-            text-transform: uppercase;
-        }
-        .risk-badge.high { background: #dc2626; color: white; }
-        .risk-badge.medium { background: #f59e0b; color: white; }
-        .similarity-score {
-            font-weight: bold;
-            font-size: 1.1em;
-        }
-        .student-text {
-            background: #f1f5f9;
-            padding: 15px;
-            border-radius: 6px;
-            margin: 10px 0;
-            border-left: 4px solid #6366f1;
-        }
-        .reference-text {
-            background: #f0f9ff;
-            padding: 15px;
-            border-radius: 6px;
-            margin: 10px 0;
-            border-left: 4px solid #0ea5e9;
-        }
-        .section-title {
-            font-size: 1.4em;
-            color: #374151;
-            margin: 30px 0 15px 0;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #e5e7eb;
-        }
-        .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
-            text-align: center;
-            color: #666;
-            font-size: 0.9em;
-        }
-        .processing-info {
-            background: #f0f9ff;
-            padding: 15px;
-            border-radius: 6px;
-            margin: 20px 0;
-            border-left: 4px solid #0ea5e9;
-        }
-        @media print {
-            body { background: white; }
-            .container { box-shadow: none; }
-        }
     </style>
 </head>
 <body>
@@ -306,93 +201,67 @@ Over 70 million people died during World War II, making it the deadliest conflic
 
         <div class="metadata">
             <div class="metadata-item">
-                <span class="value ${plagiarismScore >= 70 ? 'score-high' : plagiarismScore >= 30 ? 'score-medium' : 'score-low'}">
-                    ${plagiarismScore}%
+                <span class="value ${scoreValue >= 70 ? 'score-high' : scoreValue >= 30 ? 'score-medium' : 'score-low'}">
+                    ${scoreValue}%
                 </span>
                 <span class="label">Overall Similarity</span>
             </div>
             <div class="metadata-item">
-                <span class="value">${displayData.total_sentences}</span>
+                <span class="value">${finalData.total_sentences}</span>
                 <span class="label">Total Sentences</span>
             </div>
             <div class="metadata-item">
-                <span class="value score-high">${displayData.red_count}</span>
+                <span class="value score-high">${finalData.red_count}</span>
                 <span class="label">High Risk</span>
             </div>
             <div class="metadata-item">
-                <span class="value score-medium">${displayData.orange_count}</span>
+                <span class="value score-medium">${finalData.orange_count}</span>
                 <span class="label">Medium Risk</span>
             </div>
             <div class="metadata-item">
-                <span class="value">${displayData.flagged_sentences.length}</span>
+                <span class="value">${finalData.flagged_sentences.length}</span>
                 <span class="label">Flagged Sentences</span>
             </div>
             <div class="metadata-item">
-                <span class="value">${reportData.processing_time.toFixed(1)}s</span>
+                <span class="value">${finalData.processing_time.toFixed(1)}s</span>
                 <span class="label">Processing Time</span>
             </div>
         </div>
 
-        <div class="processing-info">
-            <h3>Analysis Summary</h3>
-            <p><strong>Risk Assessment:</strong> ${plagiarismScore >= 70 ? '🚨 HIGH RISK - Significant similarity detected' : plagiarismScore >= 30 ? '⚠️ MODERATE RISK - Some similarities found' : '✅ LOW RISK - Minimal similarities detected'}</p>
-            <p><strong>Model Used:</strong> BERT-based Semantic Similarity Analysis</p>
-            <p><strong>Detection Method:</strong> Advanced semantic matching with context understanding</p>
-        </div>
-
-        <h2 class="section-title">📋 Flagged Content Analysis</h2>
-        ${displayData.flagged_sentences.length === 0 ? 
+        <h2>📋 Flagged Content Analysis</h2>
+        ${finalData.flagged_sentences.length === 0 ? 
             '<p style="text-align: center; color: #16a34a; font-size: 1.1em; padding: 20px;">🎉 No flagged content found. The document appears to be original.</p>' :
-            displayData.flagged_sentences.map((sentence, index) => `
+            finalData.flagged_sentences.map((sentence, index) => `
             <div class="sentence-item ${sentence.risk_level === 'HIGH' ? 'high-risk' : 'medium-risk'}">
-                <div class="sentence-header">
-                    <h4 style="margin: 0;">Flagged Content #${index + 1}</h4>
-                    <div>
-                        <span class="risk-badge ${sentence.risk_level.toLowerCase()}">${sentence.risk_level} Risk</span>
-                        <span class="similarity-score" style="margin-left: 10px;">Similarity: ${(sentence.score * 100).toFixed(1)}%</span>
-                    </div>
-                </div>
-                
-                <div>
-                    <h5>📝 Student Text (Sentence ${sentence.sentence_index + 1}):</h5>
-                    <div class="student-text">${sentence.student_sentence}</div>
-                </div>
-                
-                <div>
-                    <h5>📚 Similar Reference Text:</h5>
-                    <div class="reference-text">
-                        ${sentence.reference_sentence}
-                        <br><small style="color: #0ea5e9; font-weight: bold;">Source: ${sentence.reference_document}</small>
-                    </div>
-                </div>
+                <h4>Flagged Content #${index + 1} - ${sentence.risk_level} Risk (${(sentence.score * 100).toFixed(1)}% similarity)</h4>
+                <p><strong>Student Text:</strong> ${sentence.student_sentence}</p>
+                <p><strong>Reference Text:</strong> ${sentence.reference_sentence}</p>
+                <p><small><strong>Source:</strong> ${sentence.reference_document}</small></p>
             </div>
         `).join('')}
 
-        <h2 class="section-title">💡 Recommendations</h2>
+        <h2>💡 Recommendations</h2>
         <div style="background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #6366f1;">
-            ${displayData.flagged_sentences.length > 0 ? `
-                <ul style="margin: 0; padding-left: 20px;">
-                    <li><strong>Review Flagged Content:</strong> Examine the ${displayData.flagged_sentences.length} flagged sentence(s) above for potential plagiarism.</li>
-                    <li><strong>Paraphrase:</strong> Rewrite similar content in your own words while maintaining the original meaning.</li>
-                    <li><strong>Add Citations:</strong> Properly cite any referenced sources to avoid plagiarism.</li>
-                    <li><strong>Original Analysis:</strong> Include more personal insights and original analysis.</li>
-                    <li><strong>Vary Sentence Structure:</strong> Use different sentence patterns and vocabulary.</li>
+            <p><strong>Risk Assessment:</strong> ${riskAssessment}</p>
+            ${finalData.flagged_sentences.length > 0 ? `
+                <ul>
+                    <li>Review flagged content for potential plagiarism</li>
+                    <li>Paraphrase similar content in your own words</li>
+                    <li>Add proper citations where needed</li>
+                    <li>Include more original analysis</li>
                 </ul>
             ` : `
-                <p style="margin: 0; color: #16a34a;">✅ <strong>Excellent Work!</strong> No significant similarities detected. The document demonstrates good originality.</p>
+                <p>✅ <strong>Excellent Work!</strong> No significant similarities detected.</p>
             `}
         </div>
 
-        <div class="footer">
+        <div style="margin-top: 40px; text-align: center; color: #666; font-size: 0.9em;">
             <p><strong>PlagiaSense</strong> - AI-Powered Plagiarism Detection</p>
-            <p>This report was generated using advanced BERT-based semantic analysis</p>
-            <p>For questions about this report, please consult your instructor or academic integrity guidelines</p>
         </div>
     </div>
 </body>
 </html>`;
 
-    // Create and download the file
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -415,20 +284,10 @@ Over 70 million people died during World War II, making it the deadliest conflic
     });
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 70) return "text-destructive";
-    if (score >= 30) return "text-warning";
-    return "text-success";
-  };
-
-  const getScoreGradient = (score: number) => {
-    if (score >= 70) return "from-destructive to-destructive/70";
-    if (score >= 30) return "from-warning to-warning/70";
-    return "from-success to-success/70";
-  };
-
   return (
     <div className="min-h-screen bg-background">
+      <AnimatedBackground />
+      
       {/* Header */}
       <header className="border-b glass-card px-6 py-4">
         <div className="flex items-center justify-between">
@@ -468,9 +327,11 @@ Over 70 million people died during World War II, making it the deadliest conflic
             {/* Score Overview */}
             <Card className="p-8 glass-card hover:glow-strong animate-fade-in">
               <div className="text-center space-y-6">
-                <div className="mb-6">
+                <h2 className="text-2xl font-bold">Similarity Analysis</h2>
+                
+                <div className="flex items-center justify-center">
                   <CircularProgress 
-                    value={animatedScore} 
+                    value={animatedScore}
                     size={200}
                     strokeWidth={12}
                     animated={true}
@@ -478,31 +339,41 @@ Over 70 million people died during World War II, making it the deadliest conflic
                   />
                 </div>
                 
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <div className="text-2xl font-bold">{displayData.total_sentences}</div>
+                <div className="grid grid-cols-3 gap-4 mt-8">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{finalData.total_sentences}</div>
                     <div className="text-sm text-muted-foreground">Total Sentences</div>
                   </div>
-                  <div>
-                    <div className="text-2xl font-bold text-destructive">{displayData.flagged_sentences.length}</div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-destructive">{finalData.flagged_sentences.length}</div>
                     <div className="text-sm text-muted-foreground">Flagged</div>
                   </div>
-                  <div>
-                    <div className="text-2xl font-bold">{displayData.red_count + displayData.orange_count}</div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{finalData.red_count + finalData.orange_count}</div>
                     <div className="text-sm text-muted-foreground">Issues Found</div>
                   </div>
                 </div>
               </div>
             </Card>
 
-            {/* Flagged Sentences Navigation */}
-            {displayData.flagged_sentences.length > 0 && (
+            {/* Flagged Content */}
+            {finalData.flagged_sentences.length === 0 ? (
+              <Card className="glass-card">
+                <div className="p-12 text-center">
+                  <CheckCircle className="h-16 w-16 text-success mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2 text-success">No Plagiarism Detected</h3>
+                  <p className="text-muted-foreground">
+                    This document appears to be original with no significant similarities found.
+                  </p>
+                </div>
+              </Card>
+            ) : (
               <Card className="glass-card">
                 <div className="p-6 border-b">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Eye className="h-5 w-5" />
-                      Flagged Sentences ({displayData.flagged_sentences.length})
+                      Flagged Sentences ({finalData.flagged_sentences.length})
                     </h3>
                     <div className="flex items-center gap-2">
                       <Button
@@ -514,13 +385,13 @@ Over 70 million people died during World War II, making it the deadliest conflic
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
                       <span className="text-sm text-muted-foreground">
-                        {currentFlaggedIndex + 1} of {displayData.flagged_sentences.length}
+                        {currentFlaggedIndex + 1} of {finalData.flagged_sentences.length}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setCurrentFlaggedIndex(Math.min(displayData.flagged_sentences.length - 1, currentFlaggedIndex + 1))}
-                        disabled={currentFlaggedIndex >= displayData.flagged_sentences.length - 1}
+                        onClick={() => setCurrentFlaggedIndex(Math.min(finalData.flagged_sentences.length - 1, currentFlaggedIndex + 1))}
+                        disabled={currentFlaggedIndex >= finalData.flagged_sentences.length - 1}
                       >
                         <ChevronRight className="h-4 w-4" />
                       </Button>
@@ -529,7 +400,7 @@ Over 70 million people died during World War II, making it the deadliest conflic
                 </div>
                 <div className="p-6">
                   {(() => {
-                    const flagged = displayData.flagged_sentences[currentFlaggedIndex];
+                    const flagged = finalData.flagged_sentences[currentFlaggedIndex];
                     if (!flagged) return null;
                     return (
                       <div className="space-y-4">
@@ -539,31 +410,35 @@ Over 70 million people died during World War II, making it the deadliest conflic
                               ? 'bg-destructive/10 text-destructive' 
                               : 'bg-warning/10 text-warning'
                           }`}>
-                            {flagged.risk_level} RISK - {(flagged.score * 100).toFixed(1)}% similarity
+                            {flagged.risk_level} Risk - {(flagged.score * 100).toFixed(1)}% similarity
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            Sentence #{flagged.sentence_index + 1}
-                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            Sentence {flagged.sentence_index + 1}
+                          </span>
                         </div>
                         
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="p-4 bg-destructive/5 border-l-4 border-destructive rounded-r">
-                            <div className="text-destructive font-medium flex items-center gap-2 mb-2">
-                              <AlertTriangle className="h-4 w-4" />
+                        <div className="space-y-4">
+                          <div>
+                            <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                              <FileText className="h-4 w-4" />
                               Student Text
+                            </h4>
+                            <div className="p-4 bg-muted/20 rounded-lg border-l-4 border-primary">
+                              {flagged.student_sentence}
                             </div>
-                            <p className="text-sm">{flagged.student_sentence}</p>
                           </div>
                           
-                          <div className="p-4 bg-primary/5 border-l-4 border-primary rounded-r">
-                            <div className="text-primary font-medium flex items-center gap-2 mb-2">
-                              <FileText className="h-4 w-4" />
+                          <div>
+                            <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                              <ExternalLink className="h-4 w-4" />
                               Reference Source
+                            </h4>
+                            <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border-l-4 border-blue-500">
+                              <p className="mb-2">{flagged.reference_sentence}</p>
+                              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                Source: {flagged.reference_document}
+                              </p>
                             </div>
-                            <p className="text-sm">{flagged.reference_sentence}</p>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Source: {flagged.reference_document}
-                            </p>
                           </div>
                         </div>
                       </div>
@@ -575,65 +450,66 @@ Over 70 million people died during World War II, making it the deadliest conflic
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Analysis Summary */}
+          <div className="lg:col-span-1">
             <Card className="glass-card">
-              <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold">Analysis Summary</h3>
-              </div>
-              <div className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 bg-destructive/5 rounded-lg">
-                    <div className="text-2xl font-bold text-destructive">{displayData.red_count}</div>
-                    <div className="text-sm text-muted-foreground">High Risk</div>
-                  </div>
-                  <div className="text-center p-4 bg-warning/5 rounded-lg">
-                    <div className="text-2xl font-bold text-warning">{displayData.orange_count}</div>
-                    <div className="text-sm text-muted-foreground">Medium Risk</div>
-                  </div>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  <p>Processing Time: {reportData.processing_time.toFixed(1)}s</p>
-                  <p>Analysis completed using advanced BERT-based similarity detection</p>
-                </div>
-              </div>
-            </Card>
-
-            {/* Suggestions */}
-            <Card className="glass-card">
-              <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <Lightbulb className="h-5 w-5" />
-                  Improvement Suggestions
-                </h3>
-              </div>
-              <div className="p-6 space-y-3">
-                {[
-                  "Review flagged sentences and rewrite in your own words",
-                  "Add proper citations for referenced material",
-                  "Paraphrase content while maintaining original meaning",
-                  "Ensure proper attribution for all sources used"
-                ].map((suggestion, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 bg-primary/5 rounded-lg">
-                    <div className="h-2 w-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
-                    <p className="text-sm">{suggestion}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* Document Info */}
-            <Card className="glass-card">
-              <div className="p-6 border-b">
-                <h3 className="text-lg font-semibold">Document Information</h3>
-              </div>
-              <div className="p-6 space-y-3">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
+              <div className="p-6">
+                <h3 className="font-semibold mb-4">Analysis Details</h3>
+                <div className="space-y-4">
                   <div>
-                    <p className="text-sm font-medium">{filename}</p>
-                    <p className="text-xs text-muted-foreground">Analyzed on {submissionDate}</p>
+                    <p className="text-xs text-muted-foreground mb-1">Detection Method:</p>
+                    <p className="text-sm font-medium">BERT Semantic Analysis</p>
                   </div>
+                  
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Risk Distribution:</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">High Risk</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-12 h-2 bg-muted rounded-full">
+                            <div 
+                              className="h-full bg-destructive rounded-full transition-all duration-1000"
+                              style={{ width: `${Math.min(100, (finalData.red_count / finalData.total_sentences) * 100 * 10)}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-medium text-destructive">{finalData.red_count}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Medium Risk</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-12 h-2 bg-muted rounded-full">
+                            <div 
+                              className="h-full bg-warning rounded-full transition-all duration-1000"
+                              style={{ width: `${Math.min(100, (finalData.orange_count / finalData.total_sentences) * 100 * 10)}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-medium text-warning">{finalData.orange_count}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 border-t">
+                    <p className="text-xs text-muted-foreground mb-2">Processing Time: {finalData.processing_time.toFixed(1)}s</p>
+                  </div>
+                  
+                  {finalData.flagged_sentences.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">Recommendations:</p>
+                      <div className="space-y-2 text-xs">
+                        <div className="p-2 bg-primary/5 rounded">
+                          Review flagged content for potential issues
+                        </div>
+                        <div className="p-2 bg-primary/5 rounded">
+                          Paraphrase similar sections in your own words
+                        </div>
+                        <div className="p-2 bg-primary/5 rounded">
+                          Add proper citations where needed
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
