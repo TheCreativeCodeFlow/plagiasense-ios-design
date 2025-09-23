@@ -10,16 +10,32 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import pdfplumber
-import numpy as np
-import torch
 
-# Sentence-BERT
-from sentence_transformers import SentenceTransformer, util
+# Optional ML imports with fallbacks
+try:
+    import pdfplumber
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    print("⚠️ pdfplumber not available - PDF processing disabled")
+
+try:
+    import numpy as np
+    import torch
+    from sentence_transformers import SentenceTransformer, util
+    ML_SUPPORT = True
+except ImportError:
+    ML_SUPPORT = False
+    print("⚠️ ML packages not available - using mock responses")
 
 # Sentence splitting
-import nltk
-from nltk.tokenize import sent_tokenize
+try:
+    import nltk
+    from nltk.tokenize import sent_tokenize
+    NLTK_SUPPORT = True
+except ImportError:
+    NLTK_SUPPORT = False
+    print("⚠️ NLTK not available - using basic sentence splitting")
 
 # Initialize FastAPI app
 app = FastAPI(title="PlagiaSense API", description="BERT-based Plagiarism Detection API", version="1.0.0")
@@ -68,6 +84,9 @@ class AnalysisResult(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
+    pdf_support: bool = False
+    ml_support: bool = False
+    nltk_support: bool = False
 
 class ErrorResponse(BaseModel):
     error: str
@@ -332,7 +351,13 @@ def process_plagiarism_detection(main_bytes: bytes, ref_bytes_list: List[bytes],
 @app.get("/", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
-    return HealthResponse(status="healthy", model_loaded=model is not None)
+    return HealthResponse(
+        status="healthy", 
+        model_loaded=model is not None,
+        pdf_support=PDF_SUPPORT,
+        ml_support=ML_SUPPORT,
+        nltk_support=NLTK_SUPPORT
+    )
 
 @app.post("/api/analyze", response_model=AnalysisResult)
 async def analyze_plagiarism(
