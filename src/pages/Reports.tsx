@@ -6,6 +6,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import CircularProgress from "@/components/circular-progress";
 import AnimatedBackground from "@/components/animated-background";
+import { useAssignments } from "@/lib/assignments";
 import { 
   ArrowLeft,
   FileText,
@@ -42,43 +43,43 @@ const Reports = () => {
   const { id } = useParams();
   const location = useLocation();
   const { toast } = useToast();
+  const { getAssignment } = useAssignments();
   const [animatedScore, setAnimatedScore] = useState(0);
   const [currentFlaggedIndex, setCurrentFlaggedIndex] = useState(0);
   
-  // Get analysis result from navigation state
+  // Get analysis result from navigation state or assignment data
   const analysisResult: AnalysisResult | null = location.state?.analysisResult || null;
   const filename = location.state?.filename || "Sample_Document.pdf";
+  
+  // Try to load from assignment if we have an ID but no navigation state
+  const assignment = id ? getAssignment(id) : null;
+  
+  // Determine which data to use - redirect to dashboard if no data available
+  let finalData: AnalysisResult | null = null;
+  let finalFilename: string = filename;
 
-  // Mock data for demo purposes
-  const mockData: AnalysisResult = {
-    overall_score: 0.15,
-    red_count: 2,
-    orange_count: 3,
-    total_sentences: 45,
-    flagged_sentences: [
-      {
-        student_sentence: "World War II was a global war that lasted from 1939 to 1945, involving most of the world's nations.",
-        score: 0.92,
-        reference_document: "world_war_ii_reference.pdf",
-        reference_sentence: "World War II was a global war that took place from 1939 to 1945 and involved the majority of the world's countries.",
-        sentence_index: 3,
-        risk_level: "HIGH"
-      },
-      {
-        student_sentence: "The conflict resulted in significant casualties and changed the geopolitical landscape forever.",
-        score: 0.78,
-        reference_document: "history_textbook.pdf", 
-        reference_sentence: "This devastating conflict led to enormous casualties and permanently altered the global political landscape.",
-        sentence_index: 15,
-        risk_level: "MEDIUM"
-      }
-    ],
-    highlighted_fragments: [],
-    processing_time: 45.2
-  };
+  if (assignment && assignment.analysisResult) {
+    // Use assignment data
+    finalData = assignment.analysisResult;
+    finalFilename = assignment.filename;
+  } else if (analysisResult) {
+    // Use navigation state data
+    finalData = analysisResult;
+    finalFilename = filename;
+  }
 
-  // Use either the passed analysis result or mock data
-  const finalData = analysisResult || mockData;
+  // Redirect to dashboard if no data is available
+  useEffect(() => {
+    if (!finalData) {
+      navigate('/dashboard');
+    }
+  }, [finalData, navigate]);
+
+  // Don't render if no data
+  if (!finalData) {
+    return null;
+  }
+  
   const scoreValue = Math.round(finalData.overall_score * 100);
   const submissionDate = new Date().toISOString().split('T')[0];
 
@@ -302,7 +303,7 @@ const Reports = () => {
             </Button>
             <div>
               <h1 className="text-2xl font-semibold">Plagiarism Report</h1>
-              <p className="text-sm text-muted-foreground">{filename}</p>
+              <p className="text-sm text-muted-foreground">{finalFilename}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

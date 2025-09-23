@@ -8,6 +8,11 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import AnimatedBackground from "@/components/animated-background";
 import { api, AnalysisResult } from "@/lib/api";
+import { useAssignments, Assignment } from "@/lib/assignments";
+// Import debug panel in development
+if (import.meta.env.DEV) {
+  import("@/lib/debug");
+}
 import { 
   Upload, 
   FileText, 
@@ -31,6 +36,7 @@ const Dashboard = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState("assignments");
+  const { assignments, stats, addAssignment, updateAssignment, clearAllAssignments } = useAssignments();
   const [analysisMode, setAnalysisMode] = useState("plagiarism"); // "plagiarism" or "ai_detection"
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -44,32 +50,7 @@ const Dashboard = () => {
     { id: "settings", icon: Settings, label: "Settings" },
   ];
 
-  const assignments = [
-    {
-      id: "1",
-      filename: "History_Essay_Final.docx",
-      date: "2024-01-15",
-      score: 92,
-      status: "completed",
-      sources: 3
-    },
-    {
-      id: "2", 
-      filename: "Biology_Lab_Report.pdf",
-      date: "2024-01-14",
-      score: 15,
-      status: "completed",
-      sources: 8
-    },
-    {
-      id: "3",
-      filename: "Math_Assignment_Chapter5.docx",
-      date: "2024-01-13",
-      score: 67,
-      status: "processing",
-      sources: 0
-    }
-  ];
+  // Real-time assignments are now managed by useAssignments hook
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return "text-destructive";
@@ -152,6 +133,16 @@ const Dashboard = () => {
     setIsUploading(true);
     setUploadProgress(0);
 
+    // Create assignment record immediately
+    const primaryFile = selectedFiles[0];
+    const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    const assignmentId = addAssignment(
+      primaryFile.name,
+      analysisMode as 'plagiarism' | 'ai_detection',
+      totalSize,
+      selectedFiles
+    );
+
     try {
       // Simulate progress updates
       const progressInterval = setInterval(() => {
@@ -176,6 +167,22 @@ const Dashboard = () => {
       setUploadProgress(100);
       setAnalysis(result);
 
+      // Update assignment with results
+      const score = analysisMode === "plagiarism" 
+        ? Math.round(result.overall_score * 100)
+        : Math.round(result.ai_probability * 100);
+      
+      const sources = analysisMode === "plagiarism" 
+        ? result.flagged_sentences?.length || 0
+        : result.sentence_scores?.filter((s: any) => s.ai_probability > 0.5).length || 0;
+
+      updateAssignment(assignmentId, {
+        status: 'completed',
+        score: score,
+        sources: sources,
+        analysisResult: result
+      });
+
       const modeText = analysisMode === "plagiarism" ? "plagiarism" : "AI content";
       const scoreText = analysisMode === "plagiarism" 
         ? `Overall plagiarism score: ${(result.overall_score * 100).toFixed(1)}%`
@@ -188,7 +195,7 @@ const Dashboard = () => {
 
       // Navigate to results after a brief delay
       setTimeout(() => {
-        navigate("/reports/latest", { 
+        navigate(`/reports/${assignmentId}`, { 
           state: { 
             analysisResult: result, 
             filename: selectedFiles[0].name,
@@ -199,6 +206,12 @@ const Dashboard = () => {
 
     } catch (error) {
       setUploadProgress(0);
+      
+      // Update assignment with error status
+      updateAssignment(assignmentId, {
+        status: 'error'
+      });
+      
       toast({
         title: "Analysis failed",
         description: error instanceof Error ? error.message : "An unexpected error occurred.",
@@ -206,6 +219,7 @@ const Dashboard = () => {
       });
     } finally {
       setIsUploading(false);
+      setSelectedFiles([]);
     }
   };
 
@@ -271,7 +285,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Total Assignments</p>
-                      <p className="text-2xl font-bold">24</p>
+                      <p className="text-2xl font-bold">{stats.total}</p>
                     </div>
                   </div>
                 </Card>
@@ -283,7 +297,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Clean Papers</p>
-                      <p className="text-2xl font-bold">18</p>
+                      <p className="text-2xl font-bold">{stats.clean}</p>
                     </div>
                   </div>
                 </Card>
@@ -295,7 +309,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Flagged</p>
-                      <p className="text-2xl font-bold">4</p>
+                      <p className="text-2xl font-bold">{stats.flagged}</p>
                     </div>
                   </div>
                 </Card>
@@ -307,7 +321,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Processing</p>
-                      <p className="text-2xl font-bold">2</p>
+                      <p className="text-2xl font-bold">{stats.processing}</p>
                     </div>
                   </div>
                 </Card>
@@ -478,10 +492,36 @@ const Dashboard = () => {
               {/* Assignments Table */}
               <Card className="glass-card">
                 <div className="p-6 border-b">
-                  <h3 className="text-lg font-semibold">Recent Assignments</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Recent Assignments</h3>
+                    {assignments.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          clearAllAssignments();
+                          toast({
+                            title: "All assignments cleared",
+                            description: "Assignment history has been reset.",
+                          });
+                        }}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Clear All
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="p-0">
-                  {assignments.map((assignment, index) => (
+                  {assignments.length === 0 ? (
+                    <div className="p-12 text-center text-muted-foreground">
+                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-medium mb-2">No assignments yet</h3>
+                      <p>Upload your first document to get started with plagiarism analysis.</p>
+                    </div>
+                  ) : (
+                    assignments.map((assignment, index) => (
                     <div key={assignment.id} className="p-6 border-b last:border-b-0 hover:bg-muted/20 transition-smooth">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -503,7 +543,7 @@ const Dashboard = () => {
                         </div>
                         
                         <div className="flex items-center gap-4">
-                          {assignment.status === "completed" ? (
+                          {assignment.status === "completed" && assignment.score !== undefined ? (
                             <div className="flex items-center gap-2">
                               <div className={`px-3 py-1 rounded-full text-sm font-medium ${getScoreBg(assignment.score)} ${getScoreColor(assignment.score)}`}>
                                 {assignment.score}% similarity
@@ -518,6 +558,12 @@ const Dashboard = () => {
                                 View Report
                               </Button>
                             </div>
+                          ) : assignment.status === "error" ? (
+                            <div className="flex items-center gap-2">
+                              <div className="px-3 py-1 rounded-full text-sm font-medium bg-destructive/10 text-destructive">
+                                Analysis Failed
+                              </div>
+                            </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <Progress value={33} className="w-20" />
@@ -527,7 +573,8 @@ const Dashboard = () => {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ))
+                  )}
                 </div>
               </Card>
             </div>
