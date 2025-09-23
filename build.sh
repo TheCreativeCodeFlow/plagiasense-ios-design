@@ -17,8 +17,10 @@ else
     exit 1
 fi
 
-# Upgrade pip
+# Upgrade pip and install build tools first
+echo "🔧 Upgrading pip and installing build tools..."
 python -m pip install --upgrade pip
+pip install setuptools wheel
 
 # Install requirements
 echo "📦 Installing Python packages..."
