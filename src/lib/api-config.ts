@@ -1,5 +1,14 @@
 // API configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
+const getApiBaseUrl = () => {
+  // In production, use environment variable or default to a backend service
+  if (import.meta.env.PROD) {
+    return import.meta.env.VITE_API_URL || 'https://your-backend-service.vercel.app';
+  }
+  // In development, use local backend
+  return import.meta.env.VITE_API_URL || 'http://localhost:8000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export const API_ENDPOINTS = {
   ANALYZE: `${API_BASE_URL}/api/analyze`,

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: plagiasense-backend
+    env: python
+    plan: free
+    rootDir: ./
+    buildCommand: ./build.sh
+    startCommand: uvicorn backend.api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONPATH
+        value: ./backend
+    healthCheckPath: /
+    autoDeploy: true
