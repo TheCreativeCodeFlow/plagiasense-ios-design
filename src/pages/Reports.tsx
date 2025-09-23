@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import CircularProgress from "@/components/circular-progress";
+import SimilarityProgress from "@/components/similarity-progress";
 import AnimatedBackground from "@/components/animated-background";
 import { useAssignments } from "@/lib/assignments";
 import { 
@@ -16,6 +17,10 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  Calendar,
+  AlertTriangle,
+  Search,
+  Filter,
 } from "lucide-react";
 
 // Types for plagiarism analysis results
@@ -47,14 +52,23 @@ const Reports = () => {
   const [animatedScore, setAnimatedScore] = useState(0);
   const [currentFlaggedIndex, setCurrentFlaggedIndex] = useState(0);
   
+  // If no ID is provided, redirect to all reports page
+  useEffect(() => {
+    if (!id) {
+      navigate('/reports');
+      return;
+    }
+  }, [id, navigate]);
+  
   // Get analysis result from navigation state or assignment data
   const analysisResult: AnalysisResult | null = location.state?.analysisResult || null;
   const filename = location.state?.filename || "Sample_Document.pdf";
   
-  // Try to load from assignment if we have an ID but no navigation state
+  // Try to load from assignment if we have an ID
   const assignment = id ? getAssignment(id) : null;
   
-  // Determine which data to use - redirect to dashboard if no data available
+  // Individual report view logic
+  // Determine which data to use - redirect to reports list if no data available
   let finalData: AnalysisResult | null = null;
   let finalFilename: string = filename;
 
@@ -68,14 +82,14 @@ const Reports = () => {
     finalFilename = filename;
   }
 
-  // Redirect to dashboard if no data is available
+  // Redirect to reports list if no data is available for individual report
   useEffect(() => {
-    if (!finalData) {
-      navigate('/dashboard');
+    if (!finalData && id) {
+      navigate('/reports');
     }
-  }, [finalData, navigate]);
+  }, [finalData, navigate, id]);
 
-  // Don't render if no data
+  // Don't render individual report if no data
   if (!finalData) {
     return null;
   }
@@ -296,7 +310,7 @@ const Reports = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/reports")}
               className="hover:scale-105 transition-smooth"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -307,6 +321,15 @@ const Reports = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => navigate("/reports")}
+              className="hover:bg-primary/10 transition-smooth"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              All Reports
+            </Button>
             <Button 
               variant="outline" 
               size="sm"
@@ -331,12 +354,13 @@ const Reports = () => {
                 <h2 className="text-2xl font-bold">Similarity Analysis</h2>
                 
                 <div className="flex items-center justify-center">
-                  <CircularProgress 
-                    value={animatedScore}
+                  <SimilarityProgress 
+                    similarity={animatedScore}
                     size={200}
                     strokeWidth={12}
-                    animated={true}
-                    color={animatedScore >= 70 ? 'destructive' : animatedScore >= 30 ? 'warning' : 'success'}
+                    variant="detailed"
+                    showLabel={true}
+                    showIcon={true}
                   />
                 </div>
                 
@@ -454,18 +478,28 @@ const Reports = () => {
           <div className="lg:col-span-1">
             <Card className="glass-card">
               <div className="p-6">
-                <h3 className="font-semibold mb-4">Analysis Details</h3>
+                <h3 className="font-semibold mb-4">Similarity Analysis</h3>
                 <div className="space-y-4">
+                  {/* Overall Assessment */}
+                  <div className="p-3 rounded-lg border-l-4 border-primary bg-primary/5">
+                    <p className="text-xs text-muted-foreground mb-1">Overall Assessment:</p>
+                    <p className="text-sm font-medium">
+                      {scoreValue >= 70 ? 'High Similarity Detected' : 
+                       scoreValue >= 30 ? 'Moderate Similarity Found' : 
+                       'Low Similarity - Original Content'}
+                    </p>
+                  </div>
+                  
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Detection Method:</p>
                     <p className="text-sm font-medium">BERT Semantic Analysis</p>
                   </div>
                   
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1">Risk Distribution:</p>
+                    <p className="text-xs text-muted-foreground mb-1">Similarity Breakdown:</p>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm">High Risk</span>
+                        <span className="text-sm">High Similarity</span>
                         <div className="flex items-center gap-2">
                           <div className="w-12 h-2 bg-muted rounded-full">
                             <div 
@@ -477,7 +511,7 @@ const Reports = () => {
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm">Medium Risk</span>
+                        <span className="text-sm">Medium Similarity</span>
                         <div className="flex items-center gap-2">
                           <div className="w-12 h-2 bg-muted rounded-full">
                             <div 
@@ -488,6 +522,18 @@ const Reports = () => {
                           <span className="text-sm font-medium text-warning">{finalData.orange_count}</span>
                         </div>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Original Content</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-12 h-2 bg-muted rounded-full">
+                            <div 
+                              className="h-full bg-success rounded-full transition-all duration-1000"
+                              style={{ width: `${Math.min(100, ((finalData.total_sentences - finalData.red_count - finalData.orange_count) / finalData.total_sentences) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-medium text-success">{finalData.total_sentences - finalData.red_count - finalData.orange_count}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
@@ -495,18 +541,42 @@ const Reports = () => {
                     <p className="text-xs text-muted-foreground mb-2">Processing Time: {finalData.processing_time.toFixed(1)}s</p>
                   </div>
                   
-                  {finalData.flagged_sentences.length > 0 && (
+                  {finalData.flagged_sentences.length > 0 ? (
                     <div>
-                      <p className="text-xs text-muted-foreground mb-2">Recommendations:</p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {scoreValue >= 70 ? 'Urgent Actions Required:' : 
+                         scoreValue >= 30 ? 'Recommended Actions:' : 
+                         'Suggested Improvements:'}
+                      </p>
                       <div className="space-y-2 text-xs">
+                        {scoreValue >= 70 && (
+                          <div className="p-2 bg-destructive/5 border border-destructive/20 rounded text-destructive">
+                            ⚠️ High similarity detected - immediate review required
+                          </div>
+                        )}
                         <div className="p-2 bg-primary/5 rounded">
-                          Review flagged content for potential issues
+                          Review {finalData.flagged_sentences.length} flagged sentence{finalData.flagged_sentences.length > 1 ? 's' : ''}
                         </div>
                         <div className="p-2 bg-primary/5 rounded">
-                          Paraphrase similar sections in your own words
+                          Paraphrase similar content in your own words
                         </div>
                         <div className="p-2 bg-primary/5 rounded">
-                          Add proper citations where needed
+                          Add proper citations for referenced sources
+                        </div>
+                        {scoreValue >= 50 && (
+                          <div className="p-2 bg-warning/5 border border-warning/20 rounded text-warning">
+                            💡 Consider rewriting sections with high similarity
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">Analysis Results:</p>
+                      <div className="p-3 bg-success/5 border border-success/20 rounded">
+                        <div className="text-xs text-success font-medium">✅ Excellent Originality</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          No significant similarities detected. Your content appears to be original.
                         </div>
                       </div>
                     </div>

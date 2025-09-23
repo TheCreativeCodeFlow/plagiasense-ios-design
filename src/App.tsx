@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
 import Reports from "./pages/Reports";
+import AllReports from "./pages/AllReports";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/reports" element={<AllReports />} />
             <Route path="/reports/:id" element={<Reports />} />
             <Route path="/reports/latest" element={<Reports />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

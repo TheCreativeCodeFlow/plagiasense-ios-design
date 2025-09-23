@@ -584,10 +584,17 @@ const Dashboard = () => {
             <div className="animate-fade-in">
               <Card className="p-8 text-center glass-card">
                 <BarChart3 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-xl font-semibold mb-2">Reports Dashboard</h3>
-                <p className="text-muted-foreground">
-                  Detailed analytics and reporting features coming soon
+                <h3 className="text-xl font-semibold mb-2">Analysis Reports</h3>
+                <p className="text-muted-foreground mb-4">
+                  View detailed analysis reports for all completed assignments
                 </p>
+                <Button 
+                  onClick={() => navigate('/reports')}
+                  className="btn-premium bg-gradient-primary"
+                >
+                  <Eye className="mr-2 h-4 w-4" />
+                  View All Reports
+                </Button>
               </Card>
             </div>
           )}
