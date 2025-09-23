@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import AnimatedBackground from "@/components/animated-background";
+import AIModelSelector, { AIDetectionConfig } from "@/components/ai-model-selector";
 import { api, AnalysisResult } from "@/lib/api";
 import { useAssignments, Assignment } from "@/lib/assignments";
 // Import debug panel in development
@@ -43,6 +44,10 @@ const Dashboard = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [aiDetectionConfig, setAiDetectionConfig] = useState<AIDetectionConfig>({
+    method: 'pretrained',
+    modelChoice: 'roberta-openai'
+  });
 
   const sidebarItems = [
     { id: "assignments", icon: FileText, label: "Assignments" },
@@ -159,8 +164,13 @@ const Dashboard = () => {
       if (analysisMode === "plagiarism") {
         result = await api.analyzePlagiarism(selectedFiles);
       } else {
-        // AI Detection analysis
-        result = await api.analyzeAI(selectedFiles[0]); // Only first file for AI detection
+        // AI Detection analysis with selected configuration
+        result = await api.analyzeAI(selectedFiles[0], {
+          method: aiDetectionConfig.method,
+          modelChoice: aiDetectionConfig.modelChoice,
+          apiKey: aiDetectionConfig.apiKey,
+          apiUrl: aiDetectionConfig.apiUrl
+        });
       }
       
       clearInterval(progressInterval);
@@ -364,6 +374,14 @@ const Dashboard = () => {
                   </div>
                 </div>
               </Card>
+
+              {/* AI Model Configuration - Only show for AI detection mode */}
+              {analysisMode === "ai_detection" && (
+                <AIModelSelector
+                  selectedConfig={aiDetectionConfig}
+                  onConfigChange={setAiDetectionConfig}
+                />
+              )}
 
               {/* Upload Section */}
               <Card className="p-8 glass-card">

@@ -104,6 +104,32 @@ export class PlagiaSenseAPI {
     }
   }
 
+  async getAIDetectionModels(): Promise<{ models: Record<string, string>; performance_info?: any }> {
+    try {
+      const response = await fetch(API_ENDPOINTS.AI_DETECTION_MODELS);
+      if (!response.ok) {
+        throw new Error(`AI detection models fetch failed: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('AI detection models fetch error:', error);
+      throw new Error('Failed to get AI detection models');
+    }
+  }
+
+  async getAIDetectionMethods(): Promise<{ methods: Record<string, any> }> {
+    try {
+      const response = await fetch(API_ENDPOINTS.AI_DETECTION_METHODS);
+      if (!response.ok) {
+        throw new Error(`AI detection methods fetch failed: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('AI detection methods fetch error:', error);
+      throw new Error('Failed to get AI detection methods');
+    }
+  }
+
   async analyzePlagiarism(files: File[]): Promise<AnalysisResult> {
     if (files.length < 2) {
       throw new Error('At least 2 files required: first is student document, rest are references');
@@ -142,20 +168,35 @@ export class PlagiaSenseAPI {
     }
   }
 
-  async analyzeAI(file: File, method: string = 'general'): Promise<AIDetectionResult> {
+  async analyzeAI(file: File, options: {
+    method?: string;
+    modelChoice?: string;
+    apiKey?: string;
+    apiUrl?: string;
+  } = {}): Promise<AIDetectionResult> {
     // Validate file type
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       throw new Error(`File ${file.name} is not a PDF. Only PDF files are supported.`);
     }
 
+    const { method = 'pretrained', modelChoice = 'roberta-openai', apiKey, apiUrl } = options;
+
     try {
       const formData = new FormData();
       formData.append('files', file);
-      formData.append('method', method === 'general' ? 'pretrained' : method);
+      formData.append('method', method);
       
       // Add model choice for pretrained method
-      if (method === 'general' || method === 'pretrained') {
-        formData.append('model_choice', 'roberta-openai');
+      if (method === 'pretrained') {
+        formData.append('model_choice', modelChoice);
+      }
+
+      // Add API credentials if provided
+      if (apiKey) {
+        formData.append('api_key', apiKey);
+      }
+      if (apiUrl) {
+        formData.append('api_url', apiUrl);
       }
 
       const response = await fetch(API_ENDPOINTS.AI_DETECTION, {
