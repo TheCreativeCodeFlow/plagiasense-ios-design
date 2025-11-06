@@ -96,7 +96,15 @@ class AIDetectionResult(BaseModel):
     available: bool
     method: Optional[str] = None
     overall_score: float
-    sentence_scores: List[float]
+    # Each sentence score is an object containing the sentence text, the
+    # AI probability for that sentence and its index. Define a small
+    # Pydantic model for clarity and validation.
+    class SentenceScore(BaseModel):
+        sentence: str
+        ai_probability: float
+        sentence_index: int
+
+    sentence_scores: List[SentenceScore]
     high_risk_sentences: int
     medium_risk_sentences: int
     model_used: Optional[str] = None

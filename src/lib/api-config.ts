@@ -5,7 +5,7 @@ const getApiBaseUrl = () => {
     return import.meta.env.VITE_API_URL || 'https://your-backend-service.vercel.app';
   }
   // In development, use local backend
-  return import.meta.env.VITE_API_URL || 'http://localhost:8002';
+  return import.meta.env.VITE_API_URL || 'http://localhost:8000';
 };
 
 const API_BASE_URL = getApiBaseUrl();
